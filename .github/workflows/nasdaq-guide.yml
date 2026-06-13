@@ -3,7 +3,6 @@ name: Nasdaq Guide Signal
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 8 * * 1-5"
     - cron: "0 9 * * 1-5"
 
 jobs:
@@ -23,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: pip install "pandas>=2.2,<3" "pandas_market_calendars>=4.4,<5"
 
-      - name: Gate on Los Angeles 1 AM and NYSE trading day
+      - name: Gate on NYSE trading day for scheduled runs
         id: gate
         run: |
           python - <<'PY'
@@ -33,15 +32,16 @@ jobs:
           import pandas_market_calendars as mcal
 
           la_now = datetime.now(ZoneInfo("America/Los_Angeles"))
-          should_run = la_now.hour == 1
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
           nyse = mcal.get_calendar("NYSE")
           schedule = nyse.schedule(start_date=la_now.date().isoformat(), end_date=la_now.date().isoformat())
           market_open = not schedule.empty
-          final = should_run and market_open
+          final = True if event_name == "workflow_dispatch" else market_open
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"la_now={la_now.isoformat()}\n")
               fh.write(f"market_open={'true' if market_open else 'false'}\n")
+              fh.write(f"event_name={event_name}\n")
               fh.write(f"run_job={'true' if final else 'false'}\n")
           PY
 
@@ -64,4 +64,4 @@ jobs:
       - name: Skip summary
         if: steps.gate.outputs.run_job != 'true'
         run: |
-          echo "Skipping run. LA time: ${{ steps.gate.outputs.la_now }}, NYSE open: ${{ steps.gate.outputs.market_open }}"
+          echo "Skipping run. Event: ${{ steps.gate.outputs.event_name }}, LA time: ${{ steps.gate.outputs.la_now }}, NYSE open: ${{ steps.gate.outputs.market_open }}"
