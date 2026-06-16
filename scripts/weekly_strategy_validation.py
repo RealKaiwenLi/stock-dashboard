@@ -476,7 +476,35 @@ def format_float(value: object, digits: int = 2) -> str:
     return str(value)
 
 
-def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: str) -> str:
+def frame_audit(df: pd.DataFrame) -> dict[str, object]:
+    return {
+        "start": df["date"].iloc[0].date().isoformat(),
+        "end": df["date"].iloc[-1].date().isoformat(),
+        "rows": len(df),
+    }
+
+
+def build_data_audit(qqq: pd.DataFrame, qld: pd.DataFrame, merged: pd.DataFrame) -> dict[str, dict[str, object]]:
+    return {
+        "QQQ": frame_audit(qqq),
+        "QLD": frame_audit(qld),
+        "共同可用区间": frame_audit(merged),
+    }
+
+
+def data_audit_line(data_audit: dict[str, dict[str, object]]) -> str:
+    qqq = data_audit["QQQ"]
+    qld = data_audit["QLD"]
+    merged = data_audit["共同可用区间"]
+    return (
+        "数据源：Yahoo Finance chart API；"
+        f"QQQ `{qqq['start']}` 到 `{qqq['end']}`，{qqq['rows']} 行；"
+        f"QLD `{qld['start']}` 到 `{qld['end']}`，{qld['rows']} 行；"
+        f"共同可用区间 `{merged['start']}` 到 `{merged['end']}`，{merged['rows']} 行。"
+    )
+
+
+def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: str, data_audit: dict[str, dict[str, object]]) -> str:
     display_cols = {
         "rank": "排名",
         "strategy": "策略",
@@ -495,7 +523,7 @@ def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: st
         f"# QQQ / QLD 策略周度验证 {latest_bar_date}",
         "",
         f"- 生成时间：`{generated_at}`",
-        "- 数据源：`Yahoo Finance chart API`，每次运行拉取 `QQQ` 和 `QLD` 近 25 年日线。",
+        f"- {data_audit_line(data_audit)}",
         "- 基准：`QQQ Buy & Hold`。",
         "- 执行口径：`T 日收盘确认 / T+1 开盘成交`。",
         "- 现金收益：`0%`；交易成本：`0`。",
@@ -634,7 +662,12 @@ def table_row_block(values: list[object]) -> dict:
     }
 
 
-def build_notion_blocks(summary: pd.DataFrame, latest_bar_date: str, generated_at: str) -> list[dict]:
+def build_notion_blocks(
+    summary: pd.DataFrame,
+    latest_bar_date: str,
+    generated_at: str,
+    data_audit: dict[str, dict[str, object]],
+) -> list[dict]:
     display_cols = {
         "rank": "排名",
         "strategy": "策略",
@@ -652,7 +685,7 @@ def build_notion_blocks(summary: pd.DataFrame, latest_bar_date: str, generated_a
     blocks: list[dict] = [
         heading_block(1, f"QQQ / QLD 策略周度验证 {latest_bar_date}"),
         bulleted_block(f"生成时间：{generated_at}"),
-        bulleted_block("数据源：Yahoo Finance chart API，每次运行拉取 QQQ 和 QLD 近 25 年日线。"),
+        bulleted_block(data_audit_line(data_audit).replace("`", "")),
         bulleted_block("基准：QQQ Buy & Hold。"),
         bulleted_block("执行口径：T 日收盘确认 / T+1 开盘成交。"),
         bulleted_block("现金收益：0%；交易成本：0。"),
@@ -725,11 +758,12 @@ def upsert_notion_entry(
     summary: pd.DataFrame,
     latest_bar_date: str,
     generated_at: str,
+    data_audit: dict[str, dict[str, object]],
     top_strategy: str,
 ) -> str:
     page_id = query_existing_notion_page(database_id, notion_token, report_date)
     properties = build_notion_properties(report_date, top_strategy)
-    children = build_notion_blocks(summary, latest_bar_date, generated_at)
+    children = build_notion_blocks(summary, latest_bar_date, generated_at, data_audit)
 
     if page_id is None:
         payload = {"parent": {"database_id": database_id}, "properties": properties}
@@ -781,8 +815,9 @@ def main() -> int:
     latest_bar_date = df["date"].iloc[-1].date().isoformat()
     generated_at = datetime.now(LA_TZ).isoformat(timespec="seconds")
     report_date = datetime.now(LA_TZ).date().isoformat()
+    data_audit = build_data_audit(qqq, qld, df)
     summary = build_summary(results, baseline, start, latest_bar_date)
-    markdown = build_markdown(summary, latest_bar_date, generated_at)
+    markdown = build_markdown(summary, latest_bar_date, generated_at, data_audit)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -802,6 +837,7 @@ def main() -> int:
             summary,
             latest_bar_date,
             generated_at,
+            data_audit,
             str(summary.iloc[0]["strategy"]),
         )
 
