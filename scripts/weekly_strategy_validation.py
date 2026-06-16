@@ -597,40 +597,109 @@ def build_notion_properties(report_date: str, top_strategy: str) -> dict:
     }
 
 
-def chunk_text(text: str, limit: int = 1900) -> list[str]:
-    chunks: list[str] = []
-    current = ""
-    for line in text.splitlines():
-        candidate = f"{current}\n{line}" if current else line
-        if len(candidate) > limit:
-            if current:
-                chunks.append(current)
-            current = line
-        else:
-            current = candidate
-    if current:
-        chunks.append(current)
-    return chunks
+def text_rich(content: object) -> list[dict]:
+    return [{"type": "text", "text": {"content": str(content)}}]
 
 
-def markdown_to_notion_blocks(markdown: str) -> list[dict]:
-    blocks = [
+def paragraph_block(content: object) -> dict:
+    return {
+        "object": "block",
+        "type": "paragraph",
+        "paragraph": {"rich_text": text_rich(content)},
+    }
+
+
+def bulleted_block(content: object) -> dict:
+    return {
+        "object": "block",
+        "type": "bulleted_list_item",
+        "bulleted_list_item": {"rich_text": text_rich(content)},
+    }
+
+
+def heading_block(level: int, content: object) -> dict:
+    block_type = f"heading_{level}"
+    return {
+        "object": "block",
+        "type": block_type,
+        block_type: {"rich_text": text_rich(content)},
+    }
+
+
+def table_row_block(values: list[object]) -> dict:
+    return {
+        "object": "block",
+        "type": "table_row",
+        "table_row": {"cells": [text_rich(value) for value in values]},
+    }
+
+
+def build_notion_blocks(summary: pd.DataFrame, latest_bar_date: str, generated_at: str) -> list[dict]:
+    display_cols = {
+        "rank": "排名",
+        "strategy": "策略",
+        "score": "综合分",
+        "risk_flag": "风险标记",
+        "cagr_pct": "年化收益%",
+        "excess_cagr_pct": "超额年化%",
+        "max_drawdown_pct": "最大回撤%",
+        "max_drawdown_ratio_vs_qqq": "回撤/QQQ",
+        "sharpe": "夏普比率",
+        "rolling_5y_win_rate": "滚动5年胜率",
+        "dca_vs_qqq_pct": "定投领先QQQ%",
+        "switches_per_year": "年均换仓",
+    }
+    blocks: list[dict] = [
+        heading_block(1, f"QQQ / QLD 策略周度验证 {latest_bar_date}"),
+        bulleted_block(f"生成时间：{generated_at}"),
+        bulleted_block("数据源：Yahoo Finance chart API，每次运行拉取 QQQ 和 QLD 近 25 年日线。"),
+        bulleted_block("基准：QQQ Buy & Hold。"),
+        bulleted_block("执行口径：T 日收盘确认 / T+1 开盘成交。"),
+        bulleted_block("现金收益：0%；交易成本：0。"),
+        bulleted_block("评分权重：滚动 5 年胜率 0.30，超额年化收益 0.25，最大回撤 0.15，定投 0.10，夏普比率 0.10，超额年化收益/额外回撤 0.05，恢复时间 0.05。"),
+        heading_block(2, "指标说明"),
+        bulleted_block("综合分：按权重把各项指标转成 0-100 分后加权，越高越好。"),
+        bulleted_block("风险标记：高回撤表示该策略最大回撤超过 QQQ 最大回撤的 1.3 倍。"),
+        bulleted_block("回撤/QQQ：小于等于 1.3 都视为可接受，超过 1.3 才标记高回撤。"),
+        bulleted_block("滚动5年胜率：任意一天开始持有 5 年，策略跑赢 QQQ 的比例。"),
+        heading_block(2, "排名表"),
+    ]
+
+    table_children = [table_row_block(list(display_cols.values()))]
+    for _, row in summary[list(display_cols.keys())].iterrows():
+        values = []
+        for col in display_cols:
+            value = row[col]
+            if col == "risk_flag" and value == "HIGH_DD":
+                values.append("高回撤")
+            elif col == "rolling_5y_win_rate" and isinstance(value, float):
+                values.append(f"{value:.2%}")
+            else:
+                values.append(format_float(value, 2))
+        table_children.append(table_row_block(values))
+    blocks.append(
         {
             "object": "block",
-            "type": "paragraph",
-            "paragraph": {"rich_text": [{"type": "text", "text": {"content": "以下为本次周度策略验证 Markdown 输出。"}}]},
+            "type": "table",
+            "table": {
+                "table_width": len(display_cols),
+                "has_column_header": True,
+                "has_row_header": False,
+                "children": table_children,
+            },
         }
-    ]
-    for chunk in chunk_text(markdown):
+    )
+
+    blocks.append(heading_block(2, "中文注释"))
+    for _, row in summary.iterrows():
+        note = str(row["note"]).rstrip("。.;； ")
+        risk = "；高回撤标记" if row["risk_flag"] else ""
+        blocks.append(heading_block(3, f"{int(row['rank'])}. {row['strategy']}"))
         blocks.append(
-            {
-                "object": "block",
-                "type": "code",
-                "code": {
-                    "language": "markdown",
-                    "rich_text": [{"type": "text", "text": {"content": chunk}}],
-                },
-            }
+            paragraph_block(
+                f"{note}{risk}。年化收益 {row['cagr_pct']:.2f}%，最大回撤 {row['max_drawdown_pct']:.2f}%，"
+                f"滚动 5 年胜率 {row['rolling_5y_win_rate']:.2%}，综合分 {row['score']:.2f}。"
+            )
         )
     return blocks
 
@@ -649,10 +718,18 @@ def archive_existing_children(page_id: str, notion_token: str) -> None:
         next_cursor = response.get("next_cursor")
 
 
-def upsert_notion_entry(database_id: str, notion_token: str, report_date: str, markdown: str, top_strategy: str) -> str:
+def upsert_notion_entry(
+    database_id: str,
+    notion_token: str,
+    report_date: str,
+    summary: pd.DataFrame,
+    latest_bar_date: str,
+    generated_at: str,
+    top_strategy: str,
+) -> str:
     page_id = query_existing_notion_page(database_id, notion_token, report_date)
     properties = build_notion_properties(report_date, top_strategy)
-    children = markdown_to_notion_blocks(markdown)
+    children = build_notion_blocks(summary, latest_bar_date, generated_at)
 
     if page_id is None:
         payload = {"parent": {"database_id": database_id}, "properties": properties}
@@ -718,7 +795,15 @@ def main() -> int:
     notion_token = load_env_value(args.notion_token, "NOTION_TOKEN")
     notion_database_id = load_env_value(args.notion_database_id, "NOTION_DATABASE_ID")
     if not args.skip_notion and notion_token and notion_database_id:
-        notion_url = upsert_notion_entry(notion_database_id, notion_token, report_date, markdown, str(summary.iloc[0]["strategy"]))
+        notion_url = upsert_notion_entry(
+            notion_database_id,
+            notion_token,
+            report_date,
+            summary,
+            latest_bar_date,
+            generated_at,
+            str(summary.iloc[0]["strategy"]),
+        )
 
     print(f"latest_bar_date={latest_bar_date}")
     print(f"markdown_path={md_path}")
