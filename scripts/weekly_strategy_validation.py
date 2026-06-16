@@ -381,25 +381,29 @@ def annual_returns(equity_curve: pd.Series) -> pd.Series:
 
 def score_row(row: pd.Series) -> tuple[float, bool]:
     risk_flag = row["max_drawdown_ratio_vs_qqq"] > 1.3
+    if row["max_drawdown_ratio_vs_qqq"] <= 1.3:
+        drawdown_score = 100.0
+    else:
+        # Above the hard line, fade to zero by 1.6x QQQ drawdown.
+        drawdown_score = min(max((1.6 - row["max_drawdown_ratio_vs_qqq"]) / 0.3, 0.0), 1.0) * 100.0
     scores = {
-        "rolling_5y_win_rate": min(max(row["rolling_5y_win_rate"] / 0.60, 0.0), 1.0) * 100.0,
+        "rolling_5y_win_rate": min(max(row["rolling_5y_win_rate"], 0.0), 1.0) * 100.0,
+        "excess_cagr": min(max(row["excess_cagr_pct"] / 10.0, 0.0), 1.0) * 100.0,
         "excess_cagr_per_extra_dd": min(max(row["excess_cagr_per_extra_dd"] / 0.004, 0.0), 1.0) * 100.0,
         "sharpe": min(max(row["sharpe"] / row["qqq_sharpe"], 0.0), 1.0) * 100.0 if row["qqq_sharpe"] else 0.0,
-        "max_drawdown_ratio": min(max((1.3 - row["max_drawdown_ratio_vs_qqq"]) / 0.3, 0.0), 1.0) * 100.0,
+        "max_drawdown_ratio": drawdown_score,
         "dca_terminal": min(max(row["dca_terminal"] / row["qqq_dca_terminal"], 0.0), 1.0) * 100.0,
         "recovery_days": min(max((1.5 - row["recovery_days_ratio_vs_qqq"]) / 0.5, 0.0), 1.0) * 100.0,
-        "worst_year": 100.0 if row["worst_year_diff_vs_qqq_pct"] >= -5.0 else 0.0,
         "switches": 100.0 if row["switches_per_year"] < 30.0 else 0.0,
     }
     total = (
-        scores["rolling_5y_win_rate"] * 0.25
-        + scores["excess_cagr_per_extra_dd"] * 0.20
-        + scores["sharpe"] * 0.15
+        scores["rolling_5y_win_rate"] * 0.30
+        + scores["excess_cagr"] * 0.25
         + scores["max_drawdown_ratio"] * 0.15
         + scores["dca_terminal"] * 0.10
+        + scores["sharpe"] * 0.10
+        + scores["excess_cagr_per_extra_dd"] * 0.05
         + scores["recovery_days"] * 0.05
-        + scores["worst_year"] * 0.05
-        + scores["switches"] * 0.05
     )
     return total, risk_flag
 
@@ -479,6 +483,7 @@ def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: st
         "score": "综合分",
         "risk_flag": "风险标记",
         "cagr_pct": "年化收益%",
+        "excess_cagr_pct": "超额年化%",
         "max_drawdown_pct": "最大回撤%",
         "max_drawdown_ratio_vs_qqq": "回撤/QQQ",
         "sharpe": "夏普比率",
@@ -494,15 +499,16 @@ def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: st
         "- 基准：`QQQ Buy & Hold`。",
         "- 执行口径：`T 日收盘确认 / T+1 开盘成交`。",
         "- 现金收益：`0%`；交易成本：`0`。",
-        "- 评分权重：滚动 5 年胜率 0.25，超额年化收益/额外回撤 0.20，夏普比率 0.15，最大回撤 0.15，定投 0.10，恢复时间 0.05，最差单年 0.05，换仓频率 0.05。",
+        "- 评分权重：滚动 5 年胜率 0.30，超额年化收益 0.25，最大回撤 0.15，定投 0.10，夏普比率 0.10，超额年化收益/额外回撤 0.05，恢复时间 0.05。",
         "",
         "## 指标说明",
         "",
         "- `综合分`：按上面的权重把各项指标转成 0-100 分后加权，越高越好。",
         "- `风险标记`：`高回撤` 表示该策略最大回撤超过 QQQ 最大回撤的 1.3 倍。",
         "- `年化收益%`：策略全周期 CAGR。",
+        "- `超额年化%`：策略年化收益减去 QQQ 年化收益。",
         "- `最大回撤%`：从历史高点到后续低点的最大跌幅。",
-        "- `回撤/QQQ`：策略最大回撤除以 QQQ 最大回撤；例如 1.20 表示回撤约为 QQQ 的 1.2 倍。",
+        "- `回撤/QQQ`：策略最大回撤除以 QQQ 最大回撤；小于等于 1.3 都视为可接受，超过 1.3 才标记高回撤。",
         "- `夏普比率`：当前用年化收益除以年化波动率，未扣无风险利率。",
         "- `滚动5年胜率`：任意一天开始持有 5 年，策略跑赢 QQQ 的比例。",
         "- `定投领先QQQ%`：每月定投该策略的终值相对每月定投 QQQ 的领先幅度。",
