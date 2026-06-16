@@ -257,8 +257,9 @@ def backtest_param_strategy(df: pd.DataFrame, spec: StrategySpec) -> BacktestRes
             pending_asset = "QQQ"
 
     note = (
-        f"参数组合：MACD({spec.fast},{spec.slow},{spec.signal}) + EMA{spec.exit_ema} 退出；"
-        f"{'跌破 SMA200 转现金，偏防守' if spec.sma200_cash else '不使用 SMA200 风控，偏进攻'}。"
+        f"默认持有 QQQ；QQQ 出现 MACD({spec.fast},{spec.slow},{spec.signal}) 金叉后，下一交易日开盘切到 QLD；"
+        f"QQQ 跌破 EMA{spec.exit_ema} 且 MACD hist > 0 时，下一交易日开盘退回 QQQ；"
+        f"{'若 QQQ 跌破 SMA200，则转现金，重新站上 SMA200 后回到 QQQ' if spec.sma200_cash else '策略永不转现金，只在 QQQ 和 QLD 之间切换'}。"
     )
     return summarize(spec.name, df["date"], close_values, switches, note)
 
@@ -322,10 +323,10 @@ def strategy_specs() -> list[StrategySpec]:
     for fast, slow, signal in macd_params:
         for ema in emas:
             for sma200_cash in [False, True]:
-                suffix = "SMA200Cash" if sma200_cash else "NoSMA"
+                cash_rule = "跌破SMA200转现金" if sma200_cash else "永不转现金"
                 out.append(
                     StrategySpec(
-                        name=f"MACD({fast},{slow},{signal}) / EMA{ema} Exit / {suffix}",
+                        name=f"MACD({fast},{slow},{signal})金叉买QLD / EMA{ema}退回QQQ / {cash_rule}",
                         fast=fast,
                         slow=slow,
                         signal=signal,
@@ -492,16 +493,21 @@ def build_data_audit(qqq: pd.DataFrame, qld: pd.DataFrame, merged: pd.DataFrame)
     }
 
 
-def data_audit_line(data_audit: dict[str, dict[str, object]]) -> str:
+def data_audit_items(data_audit: dict[str, dict[str, object]], markdown: bool = True) -> list[str]:
     qqq = data_audit["QQQ"]
     qld = data_audit["QLD"]
     merged = data_audit["共同可用区间"]
-    return (
-        "数据源：Yahoo Finance chart API；"
-        f"QQQ `{qqq['start']}` 到 `{qqq['end']}`，{qqq['rows']} 行；"
-        f"QLD `{qld['start']}` 到 `{qld['end']}`，{qld['rows']} 行；"
-        f"共同可用区间 `{merged['start']}` 到 `{merged['end']}`，{merged['rows']} 行。"
-    )
+
+    def format_item(label: str, item: dict[str, object], ending: str) -> str:
+        start = f"`{item['start']}`" if markdown else str(item["start"])
+        end = f"`{item['end']}`" if markdown else str(item["end"])
+        return f"{label} {start} 到 {end}，{item['rows']} 行{ending}"
+
+    return [
+        format_item("QQQ", qqq, "；"),
+        format_item("QLD", qld, "；"),
+        format_item("共同可用区间", merged, "。"),
+    ]
 
 
 def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: str, data_audit: dict[str, dict[str, object]]) -> str:
@@ -523,7 +529,8 @@ def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: st
         f"# QQQ / QLD 策略周度验证 {latest_bar_date}",
         "",
         f"- 生成时间：`{generated_at}`",
-        f"- {data_audit_line(data_audit)}",
+        "- 数据源：Yahoo Finance chart API；",
+        *[f"  - {item}" for item in data_audit_items(data_audit)],
         "- 基准：`QQQ Buy & Hold`。",
         "- 执行口径：`T 日收盘确认 / T+1 开盘成交`。",
         "- 现金收益：`0%`；交易成本：`0`。",
@@ -637,12 +644,15 @@ def paragraph_block(content: object) -> dict:
     }
 
 
-def bulleted_block(content: object) -> dict:
-    return {
+def bulleted_block(content: object, children: list[dict] | None = None) -> dict:
+    block = {
         "object": "block",
         "type": "bulleted_list_item",
         "bulleted_list_item": {"rich_text": text_rich(content)},
     }
+    if children:
+        block["bulleted_list_item"]["children"] = children
+    return block
 
 
 def heading_block(level: int, content: object) -> dict:
@@ -685,7 +695,10 @@ def build_notion_blocks(
     blocks: list[dict] = [
         heading_block(1, f"QQQ / QLD 策略周度验证 {latest_bar_date}"),
         bulleted_block(f"生成时间：{generated_at}"),
-        bulleted_block(data_audit_line(data_audit).replace("`", "")),
+        bulleted_block(
+            "数据源：Yahoo Finance chart API；",
+            [bulleted_block(item) for item in data_audit_items(data_audit, markdown=False)],
+        ),
         bulleted_block("基准：QQQ Buy & Hold。"),
         bulleted_block("执行口径：T 日收盘确认 / T+1 开盘成交。"),
         bulleted_block("现金收益：0%；交易成本：0。"),
