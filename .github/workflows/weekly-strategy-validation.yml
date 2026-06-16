@@ -1,0 +1,39 @@
+name: Weekly Strategy Validation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 16 * * 6"
+
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install "pandas>=2.2,<3"
+
+      - name: Run weekly validation
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        run: |
+          python scripts/weekly_strategy_validation.py
+
+      - name: Upload validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-strategy-validation
+          path: |
+            outputs/strategy-validation/strategy_validation_*.md
+            outputs/strategy-validation/strategy_validation_*.csv
+          if-no-files-found: error
