@@ -1,0 +1,49 @@
+{
+  "report_type": "纳斯达克策略回测",
+  "report_title": "QQQ / QLD 策略周度验证",
+  "symbols": {
+    "signal": "QQQ",
+    "risk": "QLD",
+    "cash": "CASH"
+  },
+  "yahoo_range": "25y",
+  "execution": "T 日收盘确认 / T+1 开盘成交",
+  "cash_return": 0.0,
+  "macd_params": [
+    [8, 17, 9],
+    [12, 26, 9],
+    [19, 39, 9]
+  ],
+  "exit_emas": [10, 15, 20],
+  "sma200_cash_options": [false, true],
+  "baselines": [
+    "signal_buy_hold",
+    "risk_buy_hold",
+    "fifty_fifty",
+    "sma200_cash",
+    "sma50_200_cash"
+  ],
+  "scoring": {
+    "weights": {
+      "rolling_5y_win_rate": 0.30,
+      "excess_cagr": 0.25,
+      "max_drawdown_ratio": 0.15,
+      "dca_terminal": 0.10,
+      "sharpe": 0.10,
+      "excess_cagr_per_extra_dd": 0.05,
+      "recovery_days": 0.05
+    },
+    "max_drawdown_ratio_warn": 1.3,
+    "max_drawdown_ratio_zero": 1.6,
+    "excess_cagr_cap_pct": 10.0,
+    "excess_cagr_per_extra_dd_cap": 0.004,
+    "recovery_ratio_warn": 1.5,
+    "recovery_ratio_zero": 2.0,
+    "max_switches_per_year": 30.0
+  },
+  "outputs": {
+    "markdown": true,
+    "json": true,
+    "csv": false
+  }
+}
