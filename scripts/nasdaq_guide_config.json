@@ -1,0 +1,22 @@
+{
+  "report_type": "纳斯达克指引",
+  "report_title": "纳斯达克指引",
+  "data": {
+    "symbol": "QQQ",
+    "range": "5y"
+  },
+  "model": {
+    "name": "MACD(12,26,9)金叉买QLD / EMA15退回QQQ / 永不转现金",
+    "signal_symbol": "QQQ",
+    "risk_symbol": "QLD",
+    "macd": {
+      "fast": 12,
+      "slow": 26,
+      "signal": 9
+    },
+    "exit_ema": 15,
+    "exit_requires_positive_hist": true,
+    "sma200_cash": false
+  },
+  "execution": "T日收盘确认 / T+1开盘成交"
+}

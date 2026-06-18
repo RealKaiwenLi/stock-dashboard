@@ -12,9 +12,13 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 
-YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/QQQ?interval=1d&range=5y&includePrePost=false&events=div%2Csplits"
 NOTION_VERSION = "2022-06-28"
 LA_TZ = ZoneInfo("America/Los_Angeles")
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().with_name("nasdaq_guide_config.json")
+
+
+def load_config(path: Path) -> dict[str, object]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def compute_macd(close: pd.Series, fast: int, slow: int, signal: int) -> pd.DataFrame:
@@ -38,9 +42,13 @@ def load_dotenv_file(dotenv_path: Path) -> None:
             os.environ[key] = value
 
 
-def fetch_qqq_history(max_retries: int = 3) -> pd.DataFrame:
+def yahoo_chart_url(symbol: str, range_: str) -> str:
+    return f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range={range_}&includePrePost=false&events=div%2Csplits"
+
+
+def fetch_history(symbol: str, range_: str, max_retries: int = 3) -> pd.DataFrame:
     request = Request(
-        YAHOO_CHART_URL,
+        yahoo_chart_url(symbol, range_),
         headers={
             "User-Agent": "Mozilla/5.0",
             "Accept": "application/json",
@@ -56,7 +64,7 @@ def fetch_qqq_history(max_retries: int = 3) -> pd.DataFrame:
         except (URLError, TimeoutError) as exc:
             last_error = exc
     else:
-        raise RuntimeError(f"Yahoo chart API request failed after {max_retries} attempts: {last_error}")
+        raise RuntimeError(f"Yahoo chart API request failed for {symbol} after {max_retries} attempts: {last_error}")
 
     result = payload["chart"]["result"][0]
     timestamps = result["timestamp"]
@@ -85,17 +93,26 @@ def fetch_qqq_history(max_retries: int = 3) -> pd.DataFrame:
 
     df = pd.DataFrame.from_records(records)
     if df.empty:
-        raise RuntimeError("Yahoo chart API returned no QQQ rows")
+        raise RuntimeError(f"Yahoo chart API returned no rows for {symbol}")
     return df.sort_values("date").reset_index(drop=True)
 
 
-def compute_hold_signal(df: pd.DataFrame) -> dict[str, object]:
-    macd = compute_macd(df["close"], 12, 26, 9)
-    ema15 = df["close"].ewm(span=15, adjust=False).mean()
-    golden_cross = (macd["macd"] > macd["signal"]) & (macd["macd"].shift(1) <= macd["signal"].shift(1))
-    ema15_break = (df["close"] < ema15) & (macd["hist"] > 0)
+def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str, object]:
+    model = config["model"]
+    macd_params = model["macd"]
+    signal_symbol = str(model["signal_symbol"])
+    risk_symbol = str(model["risk_symbol"])
+    exit_ema_span = int(model["exit_ema"])
+    exit_requires_positive_hist = bool(model.get("exit_requires_positive_hist", True))
 
-    held = "QQQ"
+    macd = compute_macd(df["close"], int(macd_params["fast"]), int(macd_params["slow"]), int(macd_params["signal"]))
+    exit_ema = df["close"].ewm(span=exit_ema_span, adjust=False).mean()
+    golden_cross = (macd["macd"] > macd["signal"]) & (macd["macd"].shift(1) <= macd["signal"].shift(1))
+    ema_break = df["close"] < exit_ema
+    if exit_requires_positive_hist:
+        ema_break = ema_break & (macd["hist"] > 0)
+
+    held = signal_symbol
     pending: str | None = None
 
     for idx in range(1, len(df)):
@@ -103,21 +120,26 @@ def compute_hold_signal(df: pd.DataFrame) -> dict[str, object]:
             held = pending
             pending = None
 
-        if held == "QQQ" and bool(golden_cross.iloc[idx]):
-            pending = "QLD"
-        elif held == "QLD" and bool(ema15_break.iloc[idx]):
-            pending = "QQQ"
+        if held == signal_symbol and bool(golden_cross.iloc[idx]):
+            pending = risk_symbol
+        elif held == risk_symbol and bool(ema_break.iloc[idx]):
+            pending = signal_symbol
 
     latest_idx = df.index[-1]
     latest = df.iloc[-1]
     next_open_hold = pending if pending is not None else held
-    action = "SWITCH_TO_QLD" if pending == "QLD" else "SWITCH_TO_QQQ" if pending == "QQQ" else "HOLD"
+    action = f"SWITCH_TO_{risk_symbol}" if pending == risk_symbol else f"SWITCH_TO_{signal_symbol}" if pending == signal_symbol else "HOLD"
 
     return {
+        "model_name": str(model["name"]),
+        "signal_symbol": signal_symbol,
+        "risk_symbol": risk_symbol,
+        "macd_params": f"{int(macd_params['fast'])},{int(macd_params['slow'])},{int(macd_params['signal'])}",
+        "exit_ema_label": f"EMA{exit_ema_span}",
         "latest_bar_date": latest["date"].date().isoformat(),
         "latest_close": round(float(latest["close"]), 4),
         "signal_golden_cross": bool(golden_cross.iloc[latest_idx]),
-        "signal_ema15_break": bool(ema15_break.iloc[latest_idx]),
+        "signal_ema_break": bool(ema_break.iloc[latest_idx]),
         "hold_after_close": held,
         "pending_switch_for_next_open": pending or "NONE",
         "hold_for_next_open": next_open_hold,
@@ -125,8 +147,9 @@ def compute_hold_signal(df: pd.DataFrame) -> dict[str, object]:
         "macd": round(float(macd["macd"].iloc[latest_idx]), 6),
         "signal": round(float(macd["signal"].iloc[latest_idx]), 6),
         "hist": round(float(macd["hist"].iloc[latest_idx]), 6),
-        "ema15": round(float(ema15.iloc[latest_idx]), 6),
-        "data_source": "Yahoo Finance chart API (QQQ)",
+        "exit_ema": round(float(exit_ema.iloc[latest_idx]), 6),
+        "data_source": f"Yahoo Finance chart API ({signal_symbol})",
+        "execution": str(config.get("execution", "T日收盘确认 / T+1开盘成交")),
     }
 
 
@@ -138,8 +161,8 @@ def write_markdown(result: dict[str, object], output_path: Path) -> None:
     lines = [
         f"# 纳斯达克指引 {result['latest_bar_date']}",
         "",
-        "- 策略：`MACD(12,26,9)` 金叉切 `QLD`，`QQQ` 跌破 `EMA15` 且 `MACD hist > 0` 时切回 `QQQ`",
-        "- 执行口径：`T日收盘确认 / T+1开盘成交`",
+        f"- 策略：`{result['model_name']}`",
+        f"- 执行口径：`{result['execution']}`",
         f"- 数据源：`{result['data_source']}`",
         "",
         f"- 最新完成日线日期：`{result['latest_bar_date']}`",
@@ -150,9 +173,9 @@ def write_markdown(result: dict[str, object], output_path: Path) -> None:
         f"- MACD：`{result['macd']}`",
         f"- Signal：`{result['signal']}`",
         f"- Hist：`{result['hist']}`",
-        f"- EMA15：`{result['ema15']}`",
+        f"- {result['exit_ema_label']}：`{result['exit_ema']}`",
         f"- 当日金叉：`{result['signal_golden_cross']}`",
-        f"- 当日 EMA15 退出信号：`{result['signal_ema15_break']}`",
+        f"- 当日 {result['exit_ema_label']} 退出信号：`{result['signal_ema_break']}`",
     ]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines), encoding="utf-8")
@@ -199,7 +222,7 @@ def build_notion_properties(result: dict[str, object], report_date: str) -> tupl
     title = f"{report_date} 纳斯达克指引 {hold}"
     content = (
         f"次日开盘应持有：{hold} | 动作：{action} | "
-        f"MACD={result['macd']} Signal={result['signal']} Hist={result['hist']} EMA15={result['ema15']}"
+        f"MACD={result['macd']} Signal={result['signal']} Hist={result['hist']} {result['exit_ema_label']}={result['exit_ema']}"
     )
     properties = {
         "Doc name": {"title": [{"text": {"content": title}}]},
@@ -241,6 +264,7 @@ def load_env_value(cli_value: str | None, env_name: str) -> str | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch QQQ daily data, compute QQQ/QLD hold signal, and optionally upload to Notion.")
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="JSON config path for the Nasdaq guide model.")
     parser.add_argument("--output-dir", default="outputs", help="Directory for markdown output.")
     parser.add_argument("--notion-token", help="Optional Notion token. Falls back to NOTION_TOKEN env var.")
     parser.add_argument("--notion-database-id", help="Optional Notion database id. Falls back to NOTION_DATABASE_ID env var.")
@@ -249,15 +273,20 @@ def main() -> int:
 
     project_root = Path(__file__).resolve().parent.parent
     load_dotenv_file(project_root / ".env")
+    config_path = Path(args.config)
+    if not config_path.is_absolute():
+        config_path = project_root / config_path
+    config = load_config(config_path)
+    data_config = config["data"]
 
     try:
-        df = fetch_qqq_history()
+        df = fetch_history(str(data_config["symbol"]), str(data_config.get("range", "5y")))
     except Exception as exc:
         print("status=DATA_INSUFFICIENT")
         print(f"error=live_fetch_failed:{exc}")
         return 2
 
-    result = compute_hold_signal(df)
+    result = compute_hold_signal(df, config)
     output_path = resolve_output_path(Path(args.output_dir), str(result["latest_bar_date"]))
     write_markdown(result, output_path)
     result["markdown_path"] = str(output_path)
