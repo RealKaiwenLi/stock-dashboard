@@ -46,7 +46,7 @@ def max_recovery_days(equity_curve: pd.Series) -> int:
 
 
 def annual_returns(equity_curve: pd.Series) -> pd.Series:
-    return equity_curve.resample("Y").last().pct_change().dropna()
+    return equity_curve.groupby(equity_curve.index.year).last().pct_change().dropna()
 
 
 def score_row(row: pd.Series, config: StrategyValidationConfig) -> dict[str, object]:
@@ -136,4 +136,3 @@ def build_summary(results: list[BacktestResult], baseline: BacktestResult, start
         if pd.api.types.is_float_dtype(summary[col]):
             summary[col] = summary[col].round(4)
     return summary
-

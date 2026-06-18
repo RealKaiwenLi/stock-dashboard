@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from urllib.error import HTTPError
+import time
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import pandas as pd
@@ -13,7 +14,7 @@ from .reporting import data_audit_items, scoring_weights_text
 NOTION_VERSION = "2022-06-28"
 
 
-def notion_request(method: str, url: str, token: str, payload: dict | None = None) -> dict:
+def notion_request(method: str, url: str, token: str, payload: dict | None = None, max_retries: int = 3) -> dict:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     request = Request(
         url,
@@ -25,12 +26,20 @@ def notion_request(method: str, url: str, token: str, payload: dict | None = Non
             "Notion-Version": NOTION_VERSION,
         },
     )
-    try:
-        with urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Notion API {exc.code}: {body}") from exc
+    for attempt in range(1, max_retries + 1):
+        try:
+            with urlopen(request, timeout=60) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            if exc.code not in {408, 429, 500, 502, 503, 504} or attempt == max_retries:
+                raise RuntimeError(f"Notion API {exc.code}: {body}") from exc
+            time.sleep(2**attempt)
+        except (TimeoutError, URLError) as exc:
+            if attempt == max_retries:
+                raise RuntimeError(f"Notion API request timed out after {max_retries} attempts: {method} {url}") from exc
+            time.sleep(2**attempt)
+    raise RuntimeError(f"Notion API request failed: {method} {url}")
 
 
 def query_existing_notion_page(database_id: str, notion_token: str, report_date: str, config: StrategyValidationConfig) -> str | None:
