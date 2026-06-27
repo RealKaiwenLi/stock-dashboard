@@ -108,9 +108,11 @@ def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str
     macd = compute_macd(df["close"], int(macd_params["fast"]), int(macd_params["slow"]), int(macd_params["signal"]))
     exit_ema = df["close"].ewm(span=exit_ema_span, adjust=False).mean()
     golden_cross = (macd["macd"] > macd["signal"]) & (macd["macd"].shift(1) <= macd["signal"].shift(1))
-    ema_break = df["close"] < exit_ema
+    price_below_exit_ema = df["close"] < exit_ema
+    hist_positive = macd["hist"] > 0
+    ema_break = price_below_exit_ema
     if exit_requires_positive_hist:
-        ema_break = ema_break & (macd["hist"] > 0)
+        ema_break = ema_break & hist_positive
 
     held = signal_symbol
     pending: str | None = None
@@ -127,6 +129,10 @@ def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str
 
     latest_idx = df.index[-1]
     latest = df.iloc[-1]
+    latest_macd = float(macd["macd"].iloc[latest_idx])
+    latest_signal = float(macd["signal"].iloc[latest_idx])
+    latest_hist = float(macd["hist"].iloc[latest_idx])
+    latest_exit_ema = float(exit_ema.iloc[latest_idx])
     next_open_hold = pending if pending is not None else held
     action = f"SWITCH_TO_{risk_symbol}" if pending == risk_symbol else f"SWITCH_TO_{signal_symbol}" if pending == signal_symbol else "HOLD"
 
@@ -139,15 +145,21 @@ def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str
         "latest_bar_date": latest["date"].date().isoformat(),
         "latest_close": round(float(latest["close"]), 4),
         "signal_golden_cross": bool(golden_cross.iloc[latest_idx]),
+        "price_below_exit_ema": bool(price_below_exit_ema.iloc[latest_idx]),
+        "exit_requires_positive_hist": exit_requires_positive_hist,
+        "hist_positive": bool(hist_positive.iloc[latest_idx]),
+        "macd_above_signal": latest_macd > latest_signal,
+        "macd_above_zero": latest_macd > 0,
+        "signal_above_zero": latest_signal > 0,
         "signal_ema_break": bool(ema_break.iloc[latest_idx]),
         "hold_after_close": held,
         "pending_switch_for_next_open": pending or "NONE",
         "hold_for_next_open": next_open_hold,
         "action": action,
-        "macd": round(float(macd["macd"].iloc[latest_idx]), 6),
-        "signal": round(float(macd["signal"].iloc[latest_idx]), 6),
-        "hist": round(float(macd["hist"].iloc[latest_idx]), 6),
-        "exit_ema": round(float(exit_ema.iloc[latest_idx]), 6),
+        "macd": round(latest_macd, 6),
+        "signal": round(latest_signal, 6),
+        "hist": round(latest_hist, 6),
+        "exit_ema": round(latest_exit_ema, 6),
         "data_source": f"Yahoo Finance chart API ({signal_symbol})",
         "execution": str(config.get("execution", "T日收盘确认 / T+1开盘成交")),
     }
@@ -157,7 +169,84 @@ def resolve_output_path(output_dir: Path, latest_bar_date: str) -> Path:
     return output_dir / f"current_hold_signal_{latest_bar_date}.md"
 
 
-def write_markdown(result: dict[str, object], output_path: Path) -> None:
+def markdown_bool(value: object) -> str:
+    return "是" if bool(value) else "否"
+
+
+def signal_table_rows(result: dict[str, object]) -> list[tuple[str, object, str]]:
+    exit_ema_label = str(result["exit_ema_label"])
+    return [
+        ("最新完成日线日期", result["latest_bar_date"], "Yahoo 已完成的最新日线"),
+        ("最新收盘价", result["latest_close"], "用于计算均线和 MACD 的收盘价"),
+        ("当前收盘后状态", result["hold_after_close"], "跑完最新日线后，策略当前持仓"),
+        ("次日开盘动作", result["action"], "下一交易日开盘是否需要切换"),
+        ("次日开盘应持有", result["hold_for_next_open"], "动作执行后应持有的资产"),
+        ("MACD", result["macd"], "EMA12 - EMA26"),
+        ("Signal", result["signal"], "MACD 线的 EMA9"),
+        ("Hist", result["hist"], "MACD - Signal"),
+        (exit_ema_label, result["exit_ema"], "退出观察均线"),
+        ("当日金叉", markdown_bool(result["signal_golden_cross"]), "MACD 线上穿 Signal 线"),
+        (f"收盘价低于 {exit_ema_label}", markdown_bool(result["price_below_exit_ema"]), "退出条件之一"),
+        ("退出要求 Hist > 0", markdown_bool(result["exit_requires_positive_hist"]), "当前模型是否启用该过滤条件"),
+        ("当日 Hist > 0", markdown_bool(result["hist_positive"]), "MACD 线是否仍在 Signal 线上方"),
+        ("当日完整退出信号", markdown_bool(result["signal_ema_break"]), "所有退出条件是否同时满足"),
+    ]
+
+
+def build_signal_table(result: dict[str, object]) -> str:
+    rows = signal_table_rows(result)
+    lines = [
+        "| 项目 | 数值 | 说明 |",
+        "| --- | ---: | --- |",
+    ]
+    lines.extend(f"| {label} | `{value}` | {note} |" for label, value, note in rows)
+    return "\n".join(lines)
+
+
+def build_decision_explanation(result: dict[str, object]) -> str:
+    signal_symbol = str(result["signal_symbol"])
+    risk_symbol = str(result["risk_symbol"])
+    exit_ema_label = str(result["exit_ema_label"])
+    hold = str(result["hold_for_next_open"])
+    action = str(result["action"])
+    close = result["latest_close"]
+    exit_ema = result["exit_ema"]
+    hist = result["hist"]
+    macd = result["macd"]
+    signal = result["signal"]
+
+    exit_rule = f"{signal_symbol} 收盘价跌破 {exit_ema_label}"
+    if result["exit_requires_positive_hist"]:
+        exit_rule += "，且 MACD Hist > 0"
+
+    if action == f"SWITCH_TO_{risk_symbol}":
+        reason = f"当日出现 MACD 金叉，所以按 T+1 开盘切到 {risk_symbol}。"
+    elif action == f"SWITCH_TO_{signal_symbol}":
+        reason = f"当前持有 {risk_symbol}，且退出条件已经满足，所以按 T+1 开盘退回 {signal_symbol}。"
+    elif hold == risk_symbol and result["price_below_exit_ema"] and result["exit_requires_positive_hist"] and not result["hist_positive"]:
+        reason = (
+            f"虽然 {signal_symbol} 收盘价 {close} 已低于 {exit_ema_label} {exit_ema}，"
+            f"但 Hist={hist}，没有满足 Hist > 0；因此退出条件没有完整触发，继续持有 {risk_symbol}。"
+        )
+    elif hold == risk_symbol:
+        reason = f"当前持有 {risk_symbol}，退出条件没有完整触发，所以继续持有 {risk_symbol}。"
+    elif hold == signal_symbol:
+        reason = f"当前持有 {signal_symbol}，当日没有新的买入 {risk_symbol} 信号，所以继续持有 {signal_symbol}。"
+    else:
+        reason = f"没有新的切换信号，所以维持 {hold}。"
+
+    return (
+        f"结论：次日开盘应持有 {hold}，动作为 {action}。\n"
+        f"策略规则：默认持有 {signal_symbol}；当 MACD 线上穿 Signal 线时，下一交易日开盘切到 {risk_symbol}；"
+        f"当持有 {risk_symbol} 时，退出规则为：{exit_rule}。\n"
+        f"今日判断：收盘价={close}，{exit_ema_label}={exit_ema}，"
+        f"MACD={macd}，Signal={signal}，Hist={hist}。"
+        f"其中 Hist = MACD - Signal；Hist > 0 表示 MACD 线在 Signal 线上方，Hist < 0 表示 MACD 线已经低于 Signal 线。\n"
+        f"{reason}"
+    )
+
+
+def build_markdown_report(result: dict[str, object]) -> str:
     lines = [
         f"# 纳斯达克指引 {result['latest_bar_date']}",
         "",
@@ -165,20 +254,20 @@ def write_markdown(result: dict[str, object], output_path: Path) -> None:
         f"- 执行口径：`{result['execution']}`",
         f"- 数据源：`{result['data_source']}`",
         "",
-        f"- 最新完成日线日期：`{result['latest_bar_date']}`",
-        f"- 最新收盘价：`{result['latest_close']}`",
-        f"- 当前收盘后状态：`{result['hold_after_close']}`",
-        f"- 次日开盘动作：`{result['action']}`",
-        f"- 次日开盘应持有：`{result['hold_for_next_open']}`",
-        f"- MACD：`{result['macd']}`",
-        f"- Signal：`{result['signal']}`",
-        f"- Hist：`{result['hist']}`",
-        f"- {result['exit_ema_label']}：`{result['exit_ema']}`",
-        f"- 当日金叉：`{result['signal_golden_cross']}`",
-        f"- 当日 {result['exit_ema_label']} 退出信号：`{result['signal_ema_break']}`",
+        "## 信号表",
+        "",
+        build_signal_table(result),
+        "",
+        "## 判断说明",
+        "",
+        build_decision_explanation(result),
     ]
+    return "\n".join(lines)
+
+
+def write_markdown(result: dict[str, object], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    output_path.write_text(build_markdown_report(result), encoding="utf-8")
 
 
 def notion_request(method: str, url: str, token: str, payload: dict | None = None) -> dict:
@@ -216,45 +305,124 @@ def query_existing_notion_page(database_id: str, notion_token: str, report_date:
     return results[0]["id"] if results else None
 
 
-def build_notion_properties(result: dict[str, object], report_date: str) -> tuple[dict, str]:
+def build_notion_properties(result: dict[str, object], report_date: str) -> dict:
     hold = str(result["hold_for_next_open"])
-    action = str(result["action"])
     title = f"{report_date} 纳斯达克指引 {hold}"
-    content = (
-        f"次日开盘应持有：{hold} | 动作：{action} | "
-        f"MACD={result['macd']} Signal={result['signal']} Hist={result['hist']} {result['exit_ema_label']}={result['exit_ema']}"
-    )
-    properties = {
+    return {
         "Doc name": {"title": [{"text": {"content": title}}]},
         "Date": {"date": {"start": report_date}},
         "报告类型": {"select": {"name": "纳斯达克指引"}},
         "Key Tickers": {"rich_text": [{"text": {"content": hold}}]},
         "Status": {"select": {"name": "Ready"}},
     }
-    return properties, content
+
+
+def notion_text(content: object) -> list[dict]:
+    return [{"type": "text", "text": {"content": str(content)}}]
+
+
+def notion_paragraph(content: object) -> dict:
+    return {
+        "object": "block",
+        "type": "paragraph",
+        "paragraph": {"rich_text": notion_text(content)},
+    }
+
+
+def notion_bulleted_item(content: object) -> dict:
+    return {
+        "object": "block",
+        "type": "bulleted_list_item",
+        "bulleted_list_item": {"rich_text": notion_text(content)},
+    }
+
+
+def notion_heading_2(content: object) -> dict:
+    return {
+        "object": "block",
+        "type": "heading_2",
+        "heading_2": {"rich_text": notion_text(content)},
+    }
+
+
+def notion_table_row(cells: list[object]) -> dict:
+    return {
+        "object": "block",
+        "type": "table_row",
+        "table_row": {"cells": [notion_text(cell) for cell in cells]},
+    }
+
+
+def build_notion_children(result: dict[str, object]) -> list[dict]:
+    rows = signal_table_rows(result)
+    table_rows = [notion_table_row(["项目", "数值", "说明"])]
+    table_rows.extend(notion_table_row([label, value, note]) for label, value, note in rows)
+    explanation_blocks = [notion_paragraph(line) for line in build_decision_explanation(result).splitlines() if line.strip()]
+    return [
+        notion_bulleted_item(f"策略：{result['model_name']}"),
+        notion_bulleted_item(f"执行口径：{result['execution']}"),
+        notion_bulleted_item(f"数据源：{result['data_source']}"),
+        notion_heading_2("信号表"),
+        {
+            "object": "block",
+            "type": "table",
+            "table": {
+                "table_width": 3,
+                "has_column_header": True,
+                "has_row_header": False,
+                "children": table_rows,
+            },
+        },
+        notion_heading_2("判断说明"),
+        *explanation_blocks,
+    ]
+
+
+def list_page_children(page_id: str, notion_token: str) -> list[dict]:
+    children: list[dict] = []
+    start_cursor = None
+    while True:
+        url = f"https://api.notion.com/v1/blocks/{page_id}/children?page_size=100"
+        if start_cursor:
+            url += f"&start_cursor={start_cursor}"
+        response = notion_request("GET", url, notion_token)
+        children.extend(response.get("results", []))
+        if not response.get("has_more"):
+            return children
+        start_cursor = response.get("next_cursor")
+
+
+def archive_page_children(page_id: str, notion_token: str) -> None:
+    for block in list_page_children(page_id, notion_token):
+        notion_request("PATCH", f"https://api.notion.com/v1/blocks/{block['id']}", notion_token, {"archived": True})
+
+
+def replace_page_content(page_id: str, notion_token: str, result: dict[str, object]) -> None:
+    archive_page_children(page_id, notion_token)
+    notion_request(
+        "PATCH",
+        f"https://api.notion.com/v1/blocks/{page_id}/children",
+        notion_token,
+        {"children": build_notion_children(result)},
+    )
 
 
 def upsert_notion_entry(database_id: str, notion_token: str, result: dict[str, object]) -> str:
     report_date = datetime.now(LA_TZ).date().isoformat()
     page_id = query_existing_notion_page(database_id, notion_token, report_date)
-    properties, content = build_notion_properties(result, report_date)
+    properties = build_notion_properties(result, report_date)
 
     if page_id is None:
         payload = {
             "parent": {"database_id": database_id},
             "properties": properties,
-            "children": [
-                {
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": content}}]},
-                }
-            ],
+            "children": build_notion_children(result),
         }
         response = notion_request("POST", "https://api.notion.com/v1/pages", notion_token, payload)
         return response["url"]
 
     notion_request("PATCH", f"https://api.notion.com/v1/pages/{page_id}", notion_token, {"properties": properties})
+    replace_page_content(page_id, notion_token, result)
     return f"https://www.notion.so/{page_id.replace('-', '')}"
 
 
