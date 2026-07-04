@@ -1,6 +1,6 @@
 {
   "report_type": "纳斯达克策略回测",
-  "report_title": "QQQ / QLD 策略周度验证",
+  "report_title": "QQQ / Leveraged Risk 策略周度验证",
   "symbols": {
     "signal": "QQQ",
     "risk": "QLD",
@@ -12,9 +12,15 @@
   "macd_params": [
     [8, 17, 9],
     [12, 26, 9],
-    [19, 39, 9]
+    [19, 39, 9],
+    [19, 60, 7],
+    [21, 45, 9],
+    [24, 60, 5],
+    [30, 39, 7],
+    [30, 45, 5],
+    [30, 52, 5]
   ],
-  "exit_emas": [10, 15, 20],
+  "exit_emas": [10, 12, 15, 20, 25, 30],
   "sma200_cash_options": [false, true],
   "baselines": [
     "signal_buy_hold",

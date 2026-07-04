@@ -27,7 +27,10 @@ jobs:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
         run: |
-          python scripts/weekly_strategy_validation.py --config scripts/strategy_validation/configs/nasdaq_qld.json
+          python scripts/weekly_strategy_validation.py \
+            --config scripts/strategy_validation/configs/nasdaq_leveraged_risk.json \
+            --risk-symbols QLD,TQQQ \
+            --output-dir outputs/strategy-validation
 
       - name: Upload validation artifacts
         uses: actions/upload-artifact@v4
