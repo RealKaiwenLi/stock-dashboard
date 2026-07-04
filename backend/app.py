@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from urllib.error import URLError
@@ -10,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 from flask import Flask, jsonify, request
+
+from notion_daily_recommendations import DailyRecommendationError, fetch_daily_recommendations, parse_date_range
 
 
 LA_TZ = ZoneInfo("America/Los_Angeles")
@@ -467,6 +470,19 @@ def build_benchmark(df: pd.DataFrame, benchmark: str) -> dict:
 @app.get("/api/health")
 def health():
     return jsonify({"ok": True, "service": "backtest-backend"})
+
+
+@app.get("/api/daily-recommendations")
+def daily_recommendations():
+    token = os.getenv("NOTION_TOKEN")
+    database_id = os.getenv("NOTION_DATABASE_ID")
+    if not token or not database_id:
+        return jsonify({"error": "NOTION_UNCONFIGURED", "message": "Notion token or database id is not configured."}), 503
+    try:
+        date_range = parse_date_range(request.args.get("from"), request.args.get("to"))
+        return jsonify(fetch_daily_recommendations(database_id, token, date_range))
+    except DailyRecommendationError as exc:
+        return jsonify({"error": exc.code, "message": exc.message}), exc.status
 
 
 @app.post("/api/backtests")

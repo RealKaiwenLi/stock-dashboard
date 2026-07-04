@@ -5,6 +5,7 @@ import App from './App'
 import { mockDashboardData } from './data/mockMarketData'
 import { getFearGreedData } from './services/fearGreedService'
 import { useMassiveMarketData } from './hooks/useMassiveMarketData'
+import { fetchDailyRecommendations } from './services/dailyRecommendationsApi'
 
 vi.mock('./hooks/useMassiveMarketData', () => ({
   useMassiveMarketData: vi.fn(),
@@ -12,6 +13,19 @@ vi.mock('./hooks/useMassiveMarketData', () => ({
 
 vi.mock('./services/fearGreedService', () => ({
   getFearGreedData: vi.fn(),
+}))
+
+vi.mock('./services/dailyRecommendationsApi', () => ({
+  fetchDailyRecommendations: vi.fn(),
+  getRollingMonthRange: () => ({ from: '2025-08-01', to: '2026-07-31' }),
+  mergeDailyRecommendationData: (current, incoming) => incoming ?? current,
+  rangeIncludesMonth: () => true,
+  buildCalendarDays: () => [
+    { key: '2026-07-01', date: '2026-07-01', day: 1 },
+    { key: '2026-07-02', date: '2026-07-02', day: 2 },
+    { key: '2026-07-03', date: '2026-07-03', day: 3 },
+    { key: '2026-07-04', date: '2026-07-04', day: 4 },
+  ],
 }))
 
 describe('DashboardHome', () => {
@@ -27,6 +41,20 @@ describe('DashboardHome', () => {
       connectionStatus: 'connected',
     })
     getFearGreedData.mockResolvedValue(null)
+    fetchDailyRecommendations.mockResolvedValue({
+      items: [
+        {
+          date: '2026-07-04',
+          recommendedHolding: 'QLD',
+          action: 'HOLD',
+          holdForNextOpen: 'QLD',
+          latestBarDate: '2026-07-02',
+          notionUrl: 'https://notion.so/test',
+        },
+      ],
+      source: 'notion',
+      lastSyncedAt: '2026-07-04T09:00:00-07:00',
+    })
   })
 
   it('routes to the watchlist and stock detail pages', () => {
@@ -83,6 +111,14 @@ describe('DashboardHome', () => {
     expect(screen.getByText('Market Style')).toBeInTheDocument()
     expect(screen.getByText('Tech-led')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Market Style How is this calculated?' })).toBeInTheDocument()
+  })
+
+  it('renders daily recommendation calendar on the homepage', async () => {
+    render(<App />)
+
+    expect(await screen.findByLabelText('Latest recommendation')).toHaveTextContent('QLD')
+    expect(screen.getByText('Daily Recommendation')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '2026-07-04 recommends QLD, action HOLD' })).toBeInTheDocument()
   })
 
   it('renders top bar with freshness, delay, market status and connection status', () => {
