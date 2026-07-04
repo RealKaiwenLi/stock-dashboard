@@ -49,7 +49,7 @@ class StrategyValidationConfig:
     raw: dict[str, Any]
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "configs" / "nasdaq_qld.json"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "configs" / "nasdaq_leveraged_risk.json"
 
 
 def _require(raw: dict[str, Any], key: str) -> Any:
@@ -102,4 +102,3 @@ def load_config(path: Path | None = None) -> StrategyValidationConfig:
         ),
         raw=raw,
     )
-

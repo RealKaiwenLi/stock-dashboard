@@ -1,6 +1,6 @@
 {
   "report_type": "纳斯达克策略回测",
-  "report_title": "QQQ / QLD 策略周度验证",
+  "report_title": "QQQ / Leveraged Risk 策略周度验证",
   "symbols": {
     "signal": "QQQ",
     "risk": "QLD",
