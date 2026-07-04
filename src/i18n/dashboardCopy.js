@@ -1,0 +1,469 @@
+const copy = {
+  zh: {
+    appTitle: '美股大盘 Dashboard',
+    brand: {
+      kicker: 'Market Desk',
+    },
+    nav: {
+      home: '首页',
+      watchlist: '关注列表',
+      backtest: '回测',
+    },
+    language: {
+      zh: '中文',
+      en: 'English',
+    },
+    regions: {
+      summary: '大盘状态摘要',
+      indices: '三大指数',
+      dataStatus: '数据状态',
+    },
+    labels: {
+      language: '语言',
+      mainNavigation: '主导航',
+      lastUpdated: '最后更新时间',
+      dataDelayLabel: '延迟',
+      marketStatus: '市场状态',
+      feedStatus: '行情源',
+      dataDelay: (minutes) => `数据延迟 ${minutes} 分钟`,
+      currentPrice: '当前价格',
+      dailyChange: '今日涨跌点数',
+      fiveDay: '5 日表现',
+      oneMonth: '1 月表现',
+      components: '组件分数',
+      score: '分数',
+      segmentedLabel: (title) => `${title}分段`,
+      cachedAt: (value) => `缓存于 ${value}`,
+      updatedAt: (value) => `更新于 ${value}`,
+    },
+    modules: {
+      marketPulse: '市场脉搏',
+      vixRisk: 'VIX 风险',
+      fearGreed: '恐惧与贪婪',
+      marketStyle: '市场风格',
+    },
+    explanationTrigger: '如何计算？',
+    chart: {
+      intradayLine: (symbol) => `${symbol} 盘中走势折线图`,
+    },
+    disclaimer: '本页为市场状态摘要，不构成交易建议。',
+    descriptions: {
+      marketStyle: '基于 SPY、QQQ、DIA 的今日、5 日和 1 月相对表现判断。',
+    },
+    explanations: {
+      marketPulse: [
+        '该 metric 衡量当前大盘环境偏强、偏中性还是偏弱。',
+        '输入数据：SPY、QQQ、DIA 和 VIX。',
+        '计算概览：SPY 趋势分 * 0.4 + QQQ 趋势分 * 0.25 + DIA 趋势分 * 0.2 + VIX 风险分 * 0.15。',
+        '该指标不构成交易建议，也不是买卖信号。',
+      ],
+      vixRisk: [
+        '该 metric 衡量市场波动率风险。',
+        '输入数据：VIX 当前值。',
+        '阈值概览：低于 15 为平静，15-20 正常，20-30 警惕，30-40 紧张，40 以上恐慌。',
+        '该指标不构成交易建议，也不是买卖信号。',
+      ],
+      marketStyle: [
+        '该 metric 衡量三大指数 proxy 的相对强弱。',
+        '输入数据：SPY、QQQ、DIA 的今日涨跌幅、5 日表现和 1 月表现。',
+        '计算概览：0.5 * 今日涨跌幅 + 0.3 * 5 日表现 + 0.2 * 1 月表现。',
+        '该指标不构成交易建议，也不是买卖信号。',
+      ],
+      fearGreed: [
+        '该 metric 展示 FearGreedChart API 返回的市场情绪总分。',
+        '输入数据：API 返回的 score.components、说明和原始摘要。',
+        '计算概览：MVP 直接展示 API 总分和组件，不在前端复刻完整算法。',
+        '该指标不构成交易建议，也不是买卖信号。',
+      ],
+    },
+  },
+  en: {
+    appTitle: 'US Market Dashboard',
+    brand: {
+      kicker: 'Market Desk',
+    },
+    nav: {
+      home: 'Home',
+      watchlist: 'Watchlist',
+      backtest: 'Backtest',
+    },
+    language: {
+      zh: '中文',
+      en: 'English',
+    },
+    regions: {
+      summary: 'Market summary',
+      indices: 'Major indices',
+      dataStatus: 'Data status',
+    },
+    labels: {
+      language: 'Language',
+      mainNavigation: 'Primary navigation',
+      lastUpdated: 'Last updated',
+      dataDelayLabel: 'Delay',
+      marketStatus: 'Market',
+      feedStatus: 'Feed',
+      dataDelay: (minutes) => `Data delayed ${minutes} minutes`,
+      currentPrice: 'Current price',
+      dailyChange: 'Today change',
+      fiveDay: '5D performance',
+      oneMonth: '1M performance',
+      components: 'Component scores',
+      score: 'score',
+      segmentedLabel: (title) => `${title} segments`,
+      cachedAt: (value) => `Cached at ${value}`,
+      updatedAt: (value) => `Updated at ${value}`,
+    },
+    modules: {
+      marketPulse: 'Market Pulse',
+      vixRisk: 'VIX Risk',
+      fearGreed: 'Fear & Greed',
+      marketStyle: 'Market Style',
+    },
+    explanationTrigger: 'How is this calculated?',
+    chart: {
+      intradayLine: (symbol) => `${symbol} intraday line chart`,
+    },
+    disclaimer: 'This page summarizes market conditions and is not financial advice.',
+    descriptions: {
+      marketStyle: 'Based on the relative 1D, 5D and 1M performance of SPY, QQQ and DIA.',
+    },
+    explanations: {
+      marketPulse: [
+        'This metric summarizes whether the broad market looks weak, neutral or strong.',
+        'Inputs: SPY, QQQ, DIA and VIX.',
+        'Formula overview: SPY trend score * 0.4 + QQQ trend score * 0.25 + DIA trend score * 0.2 + VIX risk score * 0.15.',
+        'This metric is not financial advice and is not a buy or sell signal.',
+      ],
+      vixRisk: [
+        'This metric summarizes volatility risk in the market.',
+        'Input: current VIX value.',
+        'Threshold overview: below 15 is Calm, 15-20 Normal, 20-30 Elevated, 30-40 Stressed, and 40+ Panic.',
+        'This metric is not financial advice and is not a buy or sell signal.',
+      ],
+      marketStyle: [
+        'This metric compares the relative strength of the three index proxies.',
+        'Inputs: SPY, QQQ and DIA 1D change, 5D performance and 1M performance.',
+        'Formula overview: 0.5 * 1D change + 0.3 * 5D performance + 0.2 * 1M performance.',
+        'This metric is not financial advice and is not a buy or sell signal.',
+      ],
+      fearGreed: [
+        'This metric displays the market sentiment score returned by the FearGreedChart API.',
+        'Inputs: API score.components, descriptions and raw summaries.',
+        'Formula overview: the MVP displays the API score and components directly instead of recreating the full algorithm in the frontend.',
+        'This metric is not financial advice and is not a buy or sell signal.',
+      ],
+    },
+  },
+}
+
+const statusLabels = {
+  zh: {},
+  en: {
+    平静: 'Calm',
+    正常: 'Normal',
+    警惕: 'Elevated',
+    紧张: 'Stressed',
+    恐慌: 'Panic',
+    偏弱: 'Weak',
+    中性: 'Neutral',
+    偏强: 'Strong',
+    极度恐惧: 'Extreme Fear',
+    恐惧: 'Fear',
+    贪婪: 'Greed',
+    极度贪婪: 'Extreme Greed',
+    科技股领涨: 'Tech-led',
+    蓝筹股领涨: 'Blue-chip-led',
+    走势均衡: 'Balanced',
+    整体偏弱: 'Broadly Weak',
+    盘中: 'Market Open',
+    盘前: 'Pre-market',
+    盘后: 'After-hours',
+    已收盘: 'Closed',
+  },
+}
+
+const indexNames = {
+  SPY: { zh: '标普 500', en: 'S&P 500' },
+  QQQ: { zh: '纳斯达克 100', en: 'Nasdaq 100' },
+  DIA: { zh: '道琼斯', en: 'Dow Jones' },
+  VIX: { zh: '波动率指数', en: 'Volatility Index' },
+}
+
+const componentCopy = {
+  VOLATILITY: {
+    zh: {
+      label: '波动率',
+      description: '用 VIX 与近期均值比较，观察市场避险压力。',
+    },
+    en: {
+      label: 'Volatility',
+      description: 'Compares VIX with its recent average to gauge defensive pressure.',
+    },
+  },
+  MOMENTUM: {
+    zh: {
+      label: '市场动量',
+      description: '用大盘价格动量判断风险偏好是否占优。',
+    },
+    en: {
+      label: 'Market Momentum',
+      description: 'Uses broad-market price momentum to assess risk appetite.',
+    },
+  },
+  'PUT/CALL': {
+    zh: {
+      label: '期权情绪',
+      description: '用期权看跌/看涨比例衡量投资者防守程度。',
+    },
+    en: {
+      label: 'Options Sentiment',
+      description: 'Uses options sentiment to estimate how defensive investors are.',
+    },
+  },
+  'SAFE HAVEN': {
+    zh: {
+      label: '避险需求',
+      description: '观察资金是否偏向避险资产。',
+    },
+    en: {
+      label: 'Safe Haven Demand',
+      description: 'Checks whether capital is favoring defensive assets.',
+    },
+  },
+  'JUNK BONDS': {
+    zh: {
+      label: '高收益债',
+      description: '观察高收益债表现，衡量信用风险偏好。',
+    },
+    en: {
+      label: 'High Yield Bonds',
+      description: 'Uses high yield bond performance to gauge credit risk appetite.',
+    },
+  },
+}
+
+const backtestCopy = {
+  zh: {
+    eyebrow: 'Backtest Lab',
+    title: '策略回测实验台',
+    maxStrategies: '最多 5 个策略',
+    status: {
+      idle: '未运行',
+      running: '运行中',
+      complete: '完成',
+      error: '错误',
+    },
+    controls: {
+      title: '实验设置',
+      experimentName: '实验名称',
+      start: '开始日期',
+      end: '结束日期',
+      benchmark: 'Benchmark',
+      helper: '执行方式固定为 T 日收盘确认 / T+1 开盘成交；所有策略共享数据范围和 benchmark。',
+      run: '运行回测',
+      running: '运行中...',
+    },
+    strategy: {
+      section: '策略候选',
+      add: '添加策略',
+      duplicate: '复制',
+      remove: '删除',
+      label: (index) => `策略 ${index + 1}`,
+      name: '策略名称',
+      signal: 'Signal',
+      risk: 'Risk',
+      fallback: 'Fallback',
+      entryRule: '入场规则',
+      exitRule: '退出规则',
+      ruleType: '规则类型',
+      ruleLabel: (index) => `规则 ${index + 1}`,
+      addRule: '添加规则',
+      removeRule: '删除规则',
+      maType: '均线类型',
+      maWindow: '均线周期',
+      breakoutWindow: '突破周期',
+      breakdownWindow: '跌破周期',
+      conditionLogic: '条件逻辑',
+    },
+    entryRules: {
+      macd_cross: 'MACD 金叉',
+      price_above_ma: '收盘价站上均线',
+      price_breakout: '突破 N 日高点',
+    },
+    exitRules: {
+      ma_break: '收盘价跌破均线',
+      macd_cross_down: 'MACD 死叉',
+      price_breakdown: '跌破 N 日低点',
+      hist_positive: 'Hist > 0',
+    },
+    chart: {
+      title: '权益曲线',
+      aria: '回测权益曲线，包含日期和权益倍数坐标',
+      unit: '权益倍数（初始资金 = 1.00x）',
+      tooltipValue: (value) => `权益倍数 ${value}`,
+    },
+    results: {
+      title: '结果排名',
+      bars: (rows) => `${rows} 根日线`,
+      columns: {
+        rank: '排名',
+        strategy: '策略',
+        cagr: '年化收益',
+        total: '总收益',
+        maxDrawdown: '最大回撤',
+        sharpe: '夏普',
+        switches: '切换次数',
+        current: '当前持仓',
+      },
+    },
+    detail: {
+      title: '当前信号与交易记录',
+      yes: '是',
+      no: '否',
+      noTrades: '暂无切换记录',
+      columns: {
+        signalDate: '信号日期',
+        executionDate: '成交日期',
+        from: '从',
+        to: '到',
+        reason: '原因',
+        equity: '权益',
+      },
+    },
+    values: {
+      buyHold: (symbol) => `${symbol} 买入并持有`,
+      entrySignal: '入场信号',
+      exitSignal: '退出信号',
+      fullExitSignal: '完整退出信号',
+      closeBelow: (target) => `收盘价 < ${target}`,
+      latestSwitch: (asset) => `最新信号将在下一次开盘切换到 ${asset}。`,
+      riskHoldWithHistFilter: (asset, condition) => `${asset} 已触发 ${condition}，但 Hist 不大于 0，因此完整退出条件尚未满足。`,
+      riskHold: (asset) => `策略继续持有 ${asset}；配置的退出条件组尚未完整触发。`,
+      fallbackHold: (asset) => `策略继续持有 ${asset}；最新完成日线没有触发入场信号。`,
+    },
+  },
+  en: {
+    eyebrow: 'Backtest Lab',
+    title: 'Backtest Lab',
+    maxStrategies: 'Up to 5 strategies',
+    status: {
+      idle: 'Idle',
+      running: 'Running',
+      complete: 'Complete',
+      error: 'Error',
+    },
+    controls: {
+      title: 'Experiment Settings',
+      experimentName: 'Experiment Name',
+      start: 'Start Date',
+      end: 'End Date',
+      benchmark: 'Benchmark',
+      helper: 'Execution is fixed at T-day close signal / T+1 open trade; all strategies share the data range and benchmark.',
+      run: 'Run Backtest',
+      running: 'Running...',
+    },
+    strategy: {
+      section: 'Strategy Candidates',
+      add: 'Add Strategy',
+      duplicate: 'Duplicate',
+      remove: 'Remove',
+      label: (index) => `Strategy ${index + 1}`,
+      name: 'Strategy Name',
+      signal: 'Signal',
+      risk: 'Risk',
+      fallback: 'Fallback',
+      entryRule: 'Entry Rule',
+      exitRule: 'Exit Rule',
+      ruleType: 'Rule Type',
+      ruleLabel: (index) => `Rule ${index + 1}`,
+      addRule: 'Add Rule',
+      removeRule: 'Remove Rule',
+      maType: 'Moving Average Type',
+      maWindow: 'Moving Average Window',
+      breakoutWindow: 'Breakout Window',
+      breakdownWindow: 'Breakdown Window',
+      conditionLogic: 'Condition Logic',
+    },
+    entryRules: {
+      macd_cross: 'MACD Golden Cross',
+      price_above_ma: 'Close Above Moving Average',
+      price_breakout: 'Break Above N-Day High',
+    },
+    exitRules: {
+      ma_break: 'Close Below Moving Average',
+      macd_cross_down: 'MACD Death Cross',
+      price_breakdown: 'Break Below N-Day Low',
+      hist_positive: 'Hist > 0',
+    },
+    chart: {
+      title: 'Equity Curve',
+      aria: 'Backtest equity curve with date and equity multiple scales',
+      unit: 'Equity multiple (initial capital = 1.00x)',
+      tooltipValue: (value) => `Equity multiple ${value}`,
+    },
+    results: {
+      title: 'Result Ranking',
+      bars: (rows) => `${rows} bars`,
+      columns: {
+        rank: 'Rank',
+        strategy: 'Strategy',
+        cagr: 'CAGR',
+        total: 'Total',
+        maxDrawdown: 'Max DD',
+        sharpe: 'Sharpe',
+        switches: 'Switches',
+        current: 'Current',
+      },
+    },
+    detail: {
+      title: 'Current Signal and Trades',
+      yes: 'Yes',
+      no: 'No',
+      noTrades: 'No switches yet',
+      columns: {
+        signalDate: 'Signal Date',
+        executionDate: 'Execution Date',
+        from: 'From',
+        to: 'To',
+        reason: 'Reason',
+        equity: 'Equity',
+      },
+    },
+    values: {
+      buyHold: (symbol) => `${symbol} Buy & Hold`,
+      entrySignal: 'Entry signal',
+      exitSignal: 'Exit signal',
+      fullExitSignal: 'Full exit signal',
+      closeBelow: (target) => `Close < ${target}`,
+      latestSwitch: (asset) => `Latest signal schedules a switch to ${asset} at the next open.`,
+      riskHoldWithHistFilter: (asset, condition) => `${asset} triggered ${condition}, but Hist is not positive, so the full exit condition is not met.`,
+      riskHold: (asset) => `The strategy remains in ${asset}; the configured exit group is not fully triggered.`,
+      fallbackHold: (asset) => `The strategy remains in ${asset}; no entry signal is active on the latest completed bar.`,
+    },
+  },
+}
+
+export function getDashboardCopy(language = 'en') {
+  return copy[language] ?? copy.en
+}
+
+export function getBacktestCopy(language = 'en') {
+  return backtestCopy[language] ?? backtestCopy.en
+}
+
+export function getLocalizedStatusLabel(label, language = 'en') {
+  return statusLabels[language]?.[label] ?? label
+}
+
+export function getIndexName(index, language = 'en') {
+  return indexNames[index.symbol]?.[language] ?? index.nameZh ?? index.symbol
+}
+
+export function getComponentCopy(component, language = 'en') {
+  const localized = componentCopy[component.name]?.[language]
+  return {
+    label: localized?.label ?? component.name,
+    description: localized?.description ?? component.description,
+  }
+}

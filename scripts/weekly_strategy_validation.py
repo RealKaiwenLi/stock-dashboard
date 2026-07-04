@@ -60,6 +60,70 @@ def apply_symbol_overrides(config, signal_symbol: str | None, risk_symbol: str |
     )
 
 
+def parse_symbol_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip().upper() for item in value.split(",") if item.strip()]
+
+
+def combined_config(config, risk_symbols: list[str]):
+    if len(risk_symbols) <= 1:
+        return config
+    risk_label = ", ".join(risk_symbols)
+    raw = dict(config.raw)
+    raw["symbols"] = {**dict(raw.get("symbols", {})), "signal": config.symbols.signal, "risk": risk_label, "cash": config.symbols.cash}
+    raw["report_title"] = f"{config.symbols.signal} / {' + '.join(risk_symbols)} 策略周度验证"
+    return replace(
+        config,
+        report_title=raw["report_title"],
+        symbols=SymbolConfig(signal=config.symbols.signal, risk=risk_label, cash=config.symbols.cash),
+        raw=raw,
+    )
+
+
+def run_validation_for_config(config, min_rows: int):
+    log(f"fetching Yahoo data: {config.symbols.signal}, range={config.yahoo_range}")
+    signal = fetch_yahoo_history(config.symbols.signal, config.yahoo_range)
+    log(f"fetched {config.symbols.signal}: rows={len(signal)}, start={signal['date'].iloc[0].date()}, end={signal['date'].iloc[-1].date()}")
+    log(f"fetching Yahoo data: {config.symbols.risk}, range={config.yahoo_range}")
+    risk = fetch_yahoo_history(config.symbols.risk, config.yahoo_range)
+    log(f"fetched {config.symbols.risk}: rows={len(risk)}, start={risk['date'].iloc[0].date()}, end={risk['date'].iloc[-1].date()}")
+
+    log("preparing merged OHLC frame and indicators")
+    df = prepare_frame(signal, risk)
+    if len(df) < min_rows:
+        raise RuntimeError(f"Data insufficient after merge: rows={len(df)}, min_rows={min_rows}")
+    log(f"merged frame ready: rows={len(df)}, start={df['date'].iloc[0].date()}, end={df['date'].iloc[-1].date()}")
+
+    log("running strategy backtests")
+    baseline, results = run_backtests(df, config)
+    log(f"backtests complete: strategies={len(results)}")
+    start = df["date"].iloc[0].date().isoformat()
+    latest_bar_date = df["date"].iloc[-1].date().isoformat()
+    data_audit = build_data_audit(config.symbols.signal, config.symbols.risk, signal, risk, df)
+    log("computing summary metrics and scores")
+    summary = build_summary(results, baseline, start, latest_bar_date, config)
+    log(f"summary ready: rows={len(summary)}, top_strategy={summary.iloc[0]['strategy']}")
+    return summary, latest_bar_date, data_audit
+
+
+def combine_summaries(items):
+    import pandas as pd
+
+    summary = pd.concat([item["summary"] for item in items], ignore_index=True)
+    if "rank" in summary.columns:
+        summary = summary.drop(columns=["rank"])
+    summary = summary.sort_values(["score", "cagr_pct"], ascending=False).reset_index(drop=True)
+    summary.insert(0, "rank", range(1, len(summary) + 1))
+    latest_bar_date = min(item["latest_bar_date"] for item in items)
+    data_audit = {}
+    for item in items:
+        risk = item["risk_symbol"]
+        for key, value in item["data_audit"].items():
+            data_audit[f"{risk} / {key}"] = value
+    return summary, latest_bar_date, data_audit
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Config-driven strategy validation using Yahoo chart API and optional Notion upload.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Strategy validation JSON config path.")
@@ -68,6 +132,7 @@ def main() -> int:
     parser.add_argument("--notion-database-id", help="Optional Notion database id. Falls back to NOTION_DATABASE_ID env var.")
     parser.add_argument("--signal-symbol", help="Override signal symbol from config, e.g. NVDA.")
     parser.add_argument("--risk-symbol", help="Override risk/leveraged symbol from config, e.g. NVDL.")
+    parser.add_argument("--risk-symbols", help="Comma-separated risk symbols to include in one combined report, e.g. QLD,TQQQ.")
     parser.add_argument("--min-rows", type=int, default=1260, help="Minimum merged rows required before running. Default 1260.")
     parser.add_argument("--skip-notion", action="store_true", help="Skip Notion upload even if env vars are set.")
     args = parser.parse_args()
@@ -79,34 +144,37 @@ def main() -> int:
     config_path = resolve_from_project_root(project_root, args.config)
     log(f"loading config: {config_path}")
     config = load_config(config_path)
-    config = apply_symbol_overrides(config, args.signal_symbol, args.risk_symbol)
-    if args.signal_symbol or args.risk_symbol:
-        log(f"applied symbol overrides: signal={config.symbols.signal}, risk={config.symbols.risk}")
+    risk_symbols = parse_symbol_list(args.risk_symbols)
+    if args.risk_symbol and risk_symbols:
+        raise ValueError("Use either --risk-symbol or --risk-symbols, not both")
+    if risk_symbols:
+        if args.signal_symbol:
+            config = apply_symbol_overrides(config, args.signal_symbol, None)
+        log(f"running combined report for risk symbols: {', '.join(risk_symbols)}")
+        run_items = []
+        for risk_symbol in risk_symbols:
+            risk_config = apply_symbol_overrides(config, None, risk_symbol)
+            log(f"running risk universe: {risk_symbol}")
+            summary, item_latest_bar_date, item_data_audit = run_validation_for_config(risk_config, args.min_rows)
+            run_items.append(
+                {
+                    "risk_symbol": risk_symbol,
+                    "summary": summary,
+                    "latest_bar_date": item_latest_bar_date,
+                    "data_audit": item_data_audit,
+                }
+            )
+        config = combined_config(config, risk_symbols)
+        summary, latest_bar_date, data_audit = combine_summaries(run_items)
+        log(f"combined summary ready: rows={len(summary)}, top_strategy={summary.iloc[0]['strategy']}")
+    else:
+        config = apply_symbol_overrides(config, args.signal_symbol, args.risk_symbol)
+        if args.signal_symbol or args.risk_symbol:
+            log(f"applied symbol overrides: signal={config.symbols.signal}, risk={config.symbols.risk}")
+        summary, latest_bar_date, data_audit = run_validation_for_config(config, args.min_rows)
 
-    log(f"fetching Yahoo data: {config.symbols.signal}, range={config.yahoo_range}")
-    signal = fetch_yahoo_history(config.symbols.signal, config.yahoo_range)
-    log(f"fetched {config.symbols.signal}: rows={len(signal)}, start={signal['date'].iloc[0].date()}, end={signal['date'].iloc[-1].date()}")
-    log(f"fetching Yahoo data: {config.symbols.risk}, range={config.yahoo_range}")
-    risk = fetch_yahoo_history(config.symbols.risk, config.yahoo_range)
-    log(f"fetched {config.symbols.risk}: rows={len(risk)}, start={risk['date'].iloc[0].date()}, end={risk['date'].iloc[-1].date()}")
-
-    log("preparing merged OHLC frame and indicators")
-    df = prepare_frame(signal, risk)
-    if len(df) < args.min_rows:
-        raise RuntimeError(f"Data insufficient after merge: rows={len(df)}, min_rows={args.min_rows}")
-    log(f"merged frame ready: rows={len(df)}, start={df['date'].iloc[0].date()}, end={df['date'].iloc[-1].date()}")
-
-    log("running strategy backtests")
-    baseline, results = run_backtests(df, config)
-    log(f"backtests complete: strategies={len(results)}")
-    start = df["date"].iloc[0].date().isoformat()
-    latest_bar_date = df["date"].iloc[-1].date().isoformat()
     generated_at = datetime.now(LA_TZ).isoformat(timespec="seconds")
     report_date = datetime.now(LA_TZ).date().isoformat()
-    data_audit = build_data_audit(config.symbols.signal, config.symbols.risk, signal, risk, df)
-    log("computing summary metrics and scores")
-    summary = build_summary(results, baseline, start, latest_bar_date, config)
-    log(f"summary ready: rows={len(summary)}, top_strategy={summary.iloc[0]['strategy']}")
 
     output_dir = resolve_from_project_root(project_root, args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
