@@ -160,7 +160,7 @@ def backtest_param_strategy(df: pd.DataFrame, spec: StrategySpec, config: Strate
     note = (
         f"默认持有 {signal_symbol}；{signal_symbol} 出现 MACD({spec.fast},{spec.slow},{spec.signal}) 金叉后，下一交易日开盘切到 {risk_symbol}；"
         f"{signal_symbol} 跌破 EMA{spec.exit_ema} 且 MACD hist > 0 时，下一交易日开盘退回 {signal_symbol}；"
-        f"{f'若 {signal_symbol} 跌破 SMA200，则转现金，重新站上 SMA200 后回到 {signal_symbol}' if spec.sma200_cash else f'策略永不转现金，只在 {signal_symbol} 和 {risk_symbol} 之间切换'}。"
+        f"{f'若 {signal_symbol} 跌破 SMA200，则转现金，重新站上 SMA200 后回到 {signal_symbol}' if spec.sma200_cash else f'策略只在 {signal_symbol} 和 {risk_symbol} 之间切换'}。"
     )
     return summarize(spec.name, df["date"], close_values, switches, note)
 
@@ -217,10 +217,10 @@ def strategy_specs(config: StrategyValidationConfig) -> list[StrategySpec]:
     for fast, slow, signal in config.macd_params:
         for ema in config.exit_emas:
             for sma200_cash in config.sma200_cash_options:
-                cash_rule = "跌破SMA200转现金" if sma200_cash else "永不转现金"
+                cash_rule = " / 跌破SMA200转现金" if sma200_cash else ""
                 out.append(
                     StrategySpec(
-                        name=f"MACD({fast},{slow},{signal})金叉买{config.symbols.risk} / EMA{ema}退回{config.symbols.signal} / {cash_rule}",
+                        name=f"MACD({fast},{slow},{signal})金叉买{config.symbols.risk} / EMA{ema}退回{config.symbols.signal}{cash_rule}",
                         fast=fast,
                         slow=slow,
                         signal=signal,
@@ -247,4 +247,3 @@ def run_backtests(df: pd.DataFrame, config: StrategyValidationConfig) -> tuple[B
         results.append(baseline_map[name])
     results.extend(backtest_param_strategy(df, spec, config) for spec in strategy_specs(config))
     return baseline, results
-

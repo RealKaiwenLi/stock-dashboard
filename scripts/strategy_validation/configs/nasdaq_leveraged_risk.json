@@ -21,13 +21,11 @@
     [30, 52, 5]
   ],
   "exit_emas": [10, 12, 15, 20, 25, 30],
-  "sma200_cash_options": [false, true],
+  "sma200_cash_options": [false],
   "baselines": [
     "signal_buy_hold",
     "risk_buy_hold",
-    "fifty_fifty",
-    "sma200_cash",
-    "sma50_200_cash"
+    "fifty_fifty"
   ],
   "scoring": {
     "weights": {

@@ -81,16 +81,48 @@ def combined_config(config, risk_symbols: list[str]):
     )
 
 
-def run_validation_for_config(config, min_rows: int):
-    log(f"fetching Yahoo data: {config.symbols.signal}, range={config.yahoo_range}")
-    signal = fetch_yahoo_history(config.symbols.signal, config.yahoo_range)
-    log(f"fetched {config.symbols.signal}: rows={len(signal)}, start={signal['date'].iloc[0].date()}, end={signal['date'].iloc[-1].date()}")
-    log(f"fetching Yahoo data: {config.symbols.risk}, range={config.yahoo_range}")
-    risk = fetch_yahoo_history(config.symbols.risk, config.yahoo_range)
-    log(f"fetched {config.symbols.risk}: rows={len(risk)}, start={risk['date'].iloc[0].date()}, end={risk['date'].iloc[-1].date()}")
+def fetch_symbol_history(symbol: str, range_: str):
+    log(f"fetching Yahoo data: {symbol}, range={range_}")
+    history = fetch_yahoo_history(symbol, range_)
+    log(f"fetched {symbol}: rows={len(history)}, start={history['date'].iloc[0].date()}, end={history['date'].iloc[-1].date()}")
+    return history
+
+
+def common_history_range(histories):
+    starts = [history["date"].iloc[0] for history in histories]
+    ends = [history["date"].iloc[-1] for history in histories]
+    return max(starts), min(ends)
+
+
+def common_backtest_range(signal, risk_histories):
+    frames = [prepare_frame(signal, risk) for risk in risk_histories.values()]
+    starts = [frame["date"].iloc[0] for frame in frames]
+    ends = [frame["date"].iloc[-1] for frame in frames]
+    return max(starts), min(ends)
+
+
+def run_validation_for_config(config, min_rows: int, signal=None, risk=None, common_start=None, common_end=None):
+    if signal is None:
+        signal = fetch_symbol_history(config.symbols.signal, config.yahoo_range)
+    else:
+        log(f"using prefetched {config.symbols.signal}: rows={len(signal)}, start={signal['date'].iloc[0].date()}, end={signal['date'].iloc[-1].date()}")
+    if risk is None:
+        risk = fetch_symbol_history(config.symbols.risk, config.yahoo_range)
+    else:
+        log(f"using prefetched {config.symbols.risk}: rows={len(risk)}, start={risk['date'].iloc[0].date()}, end={risk['date'].iloc[-1].date()}")
 
     log("preparing merged OHLC frame and indicators")
     df = prepare_frame(signal, risk)
+    if common_start is not None or common_end is not None:
+        start_label = common_start.date().isoformat() if common_start is not None else df["date"].iloc[0].date().isoformat()
+        end_label = common_end.date().isoformat() if common_end is not None else df["date"].iloc[-1].date().isoformat()
+        mask = df["date"].notna()
+        if common_start is not None:
+            mask &= df["date"] >= common_start
+        if common_end is not None:
+            mask &= df["date"] <= common_end
+        df = df[mask].reset_index(drop=True)
+        log(f"restricted merged frame to common range: start={start_label}, end={end_label}, rows={len(df)}")
     if len(df) < min_rows:
         raise RuntimeError(f"Data insufficient after merge: rows={len(df)}, min_rows={min_rows}")
     log(f"merged frame ready: rows={len(df)}, start={df['date'].iloc[0].date()}, end={df['date'].iloc[-1].date()}")
@@ -113,6 +145,7 @@ def combine_summaries(items):
     summary = pd.concat([item["summary"] for item in items], ignore_index=True)
     if "rank" in summary.columns:
         summary = summary.drop(columns=["rank"])
+    summary = summary.drop_duplicates(subset=["strategy"], keep="first")
     summary = summary.sort_values(["score", "cagr_pct"], ascending=False).reset_index(drop=True)
     summary.insert(0, "rank", range(1, len(summary) + 1))
     latest_bar_date = min(item["latest_bar_date"] for item in items)
@@ -151,11 +184,24 @@ def main() -> int:
         if args.signal_symbol:
             config = apply_symbol_overrides(config, args.signal_symbol, None)
         log(f"running combined report for risk symbols: {', '.join(risk_symbols)}")
+        signal_history = fetch_symbol_history(config.symbols.signal, config.yahoo_range)
+        risk_histories = {risk_symbol: fetch_symbol_history(risk_symbol, config.yahoo_range) for risk_symbol in risk_symbols}
+        raw_common_start, raw_common_end = common_history_range([signal_history, *risk_histories.values()])
+        log(f"combined raw data range: start={raw_common_start.date()}, end={raw_common_end.date()}")
+        common_start, common_end = common_backtest_range(signal_history, risk_histories)
+        log(f"combined common backtest range: start={common_start.date()}, end={common_end.date()}")
         run_items = []
         for risk_symbol in risk_symbols:
             risk_config = apply_symbol_overrides(config, None, risk_symbol)
             log(f"running risk universe: {risk_symbol}")
-            summary, item_latest_bar_date, item_data_audit = run_validation_for_config(risk_config, args.min_rows)
+            summary, item_latest_bar_date, item_data_audit = run_validation_for_config(
+                risk_config,
+                args.min_rows,
+                signal=signal_history,
+                risk=risk_histories[risk_symbol],
+                common_start=common_start,
+                common_end=common_end,
+            )
             run_items.append(
                 {
                     "risk_symbol": risk_symbol,

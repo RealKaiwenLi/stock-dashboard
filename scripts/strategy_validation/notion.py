@@ -12,9 +12,17 @@ from .reporting import data_audit_items, scoring_weights_text
 
 
 NOTION_VERSION = "2022-06-28"
+NOTION_VIEWS_VERSION = "2026-03-11"
 
 
-def notion_request(method: str, url: str, token: str, payload: dict | None = None, max_retries: int = 3) -> dict:
+def notion_request(
+    method: str,
+    url: str,
+    token: str,
+    payload: dict | None = None,
+    max_retries: int = 3,
+    notion_version: str = NOTION_VERSION,
+) -> dict:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     request = Request(
         url,
@@ -23,7 +31,7 @@ def notion_request(method: str, url: str, token: str, payload: dict | None = Non
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-            "Notion-Version": NOTION_VERSION,
+            "Notion-Version": notion_version,
         },
     )
     for attempt in range(1, max_retries + 1):
@@ -40,6 +48,63 @@ def notion_request(method: str, url: str, token: str, payload: dict | None = Non
                 raise RuntimeError(f"Notion API request timed out after {max_retries} attempts: {method} {url}") from exc
             time.sleep(2**attempt)
     raise RuntimeError(f"Notion API request failed: {method} {url}")
+
+
+def results_table_property_order(config: StrategyValidationConfig) -> list[dict]:
+    columns = [
+        ("策略", 320),
+        ("年化收益%", 120),
+        ("最大回撤%", 120),
+        ("夏普比率", 120),
+        ("排名", 90),
+        ("综合分", 110),
+        ("风险标记", 110),
+        ("超额年化%", 120),
+        (f"回撤/{config.symbols.signal}", 120),
+        ("滚动5年胜率", 140),
+        (f"定投领先{config.symbols.signal}%", 150),
+        ("文本", 360),
+        ("年均换仓", 120),
+    ]
+    return [{"property_id": name, "visible": True, "width": width} for name, width in columns]
+
+
+def configure_results_table_view(database_id: str, notion_token: str, config: StrategyValidationConfig) -> None:
+    response = notion_request(
+        "GET",
+        f"https://api.notion.com/v1/views?database_id={database_id}",
+        notion_token,
+        notion_version=NOTION_VIEWS_VERSION,
+    )
+    table_view = None
+    for view in response.get("results", []):
+        view_id = view["id"]
+        detail = notion_request(
+            "GET",
+            f"https://api.notion.com/v1/views/{view_id}",
+            notion_token,
+            notion_version=NOTION_VIEWS_VERSION,
+        )
+        if detail.get("type") == "table":
+            table_view = detail
+            break
+    if table_view is None:
+        return
+    notion_request(
+        "PATCH",
+        f"https://api.notion.com/v1/views/{table_view['id']}",
+        notion_token,
+        {
+            "sorts": [{"property": "排名", "direction": "ascending"}],
+            "configuration": {
+                "type": "table",
+                "properties": results_table_property_order(config),
+                "wrap_cells": False,
+                "frozen_column_index": 1,
+            },
+        },
+        notion_version=NOTION_VIEWS_VERSION,
+    )
 
 
 def query_existing_notion_page(database_id: str, notion_token: str, report_date: str, config: StrategyValidationConfig) -> str | None:
@@ -153,6 +218,9 @@ def create_weekly_results_database(
         "description": [{"type": "text", "text": {"content": database_description(latest_bar_date, generated_at, data_audit, config)}}],
         "properties": {
             "策略": {"title": {}},
+            "年化收益%": {"number": {"format": "number"}},
+            "最大回撤%": {"number": {"format": "number"}},
+            "夏普比率": {"number": {"format": "number"}},
             "排名": {"number": {"format": "number"}},
             "综合分": {"number": {"format": "number"}},
             "风险标记": {
@@ -162,18 +230,16 @@ def create_weekly_results_database(
                     ]
                 }
             },
-            "年化收益%": {"number": {"format": "number"}},
             "超额年化%": {"number": {"format": "number"}},
-            "最大回撤%": {"number": {"format": "number"}},
             f"回撤/{config.symbols.signal}": {"number": {"format": "number"}},
-            "夏普比率": {"number": {"format": "number"}},
             "滚动5年胜率": {"number": {"format": "number"}},
             f"定投领先{config.symbols.signal}%": {"number": {"format": "number"}},
-            "年均换仓": {"number": {"format": "number"}},
             "文本": {"rich_text": {}},
+            "年均换仓": {"number": {"format": "number"}},
         },
     }
     response = notion_request("POST", "https://api.notion.com/v1/databases", notion_token, payload)
+    configure_results_table_view(response["id"], notion_token, config)
     return response["id"], response["url"]
 
 
@@ -228,17 +294,17 @@ def row_detail_children(row: pd.Series, config: StrategyValidationConfig) -> lis
 def result_row_properties(row: pd.Series, config: StrategyValidationConfig) -> dict:
     properties = {
         "策略": {"title": [{"type": "text", "text": {"content": str(row["strategy"])}}]},
+        "年化收益%": {"number": float(row["cagr_pct"])},
+        "最大回撤%": {"number": float(row["max_drawdown_pct"])},
+        "夏普比率": {"number": float(row["sharpe"])},
         "排名": {"number": int(row["rank"])},
         "综合分": {"number": float(row["score"])},
-        "年化收益%": {"number": float(row["cagr_pct"])},
         "超额年化%": {"number": float(row["excess_cagr_pct"])},
-        "最大回撤%": {"number": float(row["max_drawdown_pct"])},
         f"回撤/{config.symbols.signal}": {"number": float(row["max_drawdown_ratio_vs_signal"])},
-        "夏普比率": {"number": float(row["sharpe"])},
         "滚动5年胜率": {"number": float(row["rolling_5y_win_rate"] * 100.0)},
         f"定投领先{config.symbols.signal}%": {"number": float(row["dca_vs_signal_pct"])},
-        "年均换仓": {"number": float(row["switches_per_year"])},
         "文本": {"rich_text": [{"type": "text", "text": {"content": row_short_note(row)}}]},
+        "年均换仓": {"number": float(row["switches_per_year"])},
     }
     if row["risk_flag"]:
         properties["风险标记"] = {"select": {"name": "高回撤"}}
