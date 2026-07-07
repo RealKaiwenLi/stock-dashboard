@@ -106,6 +106,7 @@ function renderBacktest(language = 'en') {
 describe('BacktestLabPage', () => {
   afterEach(() => {
     cleanup()
+    localStorage.clear()
     chartApi.setVisibleRange.mockClear()
     chartApi.setVisibleLogicalRange.mockClear()
     chartApi.fitContent.mockClear()
@@ -154,6 +155,55 @@ describe('BacktestLabPage', () => {
     expect(screen.getAllByLabelText('规则类型')[0]).toHaveDisplayValue('MACD 金叉')
     expect(screen.getByDisplayValue('Hist > 0')).toBeInTheDocument()
     expect(screen.queryByLabelText('退出附加条件：Hist > 0')).not.toBeInTheDocument()
+  })
+
+  it('saves a strategy as a local favorite and adds it back with one click', async () => {
+    const user = userEvent.setup()
+    renderBacktest()
+
+    await user.clear(screen.getByLabelText('Strategy Name'))
+    await user.type(screen.getByLabelText('Strategy Name'), 'TQQQ Favorite')
+    await user.clear(screen.getByLabelText('Risk'))
+    await user.type(screen.getByLabelText('Risk'), 'tqqq')
+
+    expect(screen.getByRole('button', { name: 'Favorite' })).toHaveTextContent('☆')
+    await user.click(screen.getByRole('button', { name: 'Favorite' }))
+    expect(screen.getByRole('button', { name: 'Favorite' })).toHaveTextContent('★')
+
+    expect(screen.getByRole('region', { name: 'Strategy Favorites' })).toHaveTextContent('TQQQ Favorite')
+    expect(screen.getByRole('region', { name: 'Strategy Favorites' })).toHaveTextContent('Risk TQQQ')
+
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(screen.getAllByDisplayValue('TQQQ Favorite')).toHaveLength(2)
+    expect(screen.getAllByDisplayValue('TQQQ')).toHaveLength(2)
+  })
+
+  it('collapses strategy cards without changing the backtest payload', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => backtestResult,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderBacktest()
+
+    await user.click(screen.getByRole('button', { name: 'Collapse' }))
+
+    expect(screen.getByRole('button', { name: 'Expand' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('Strategy Name')).not.toBeInTheDocument()
+    expect(screen.getByText('EMA15 + Hist')).toBeInTheDocument()
+    expect(screen.getByText('Signal QQQ / Risk QLD / Fallback QQQ')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Run Backtest' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(request.strategies[0].name).toBe('EMA15 + Hist')
+    expect(request.strategies[0].exit.rules.map((rule) => rule.type)).toEqual(['ma_break', 'hist_positive'])
+
+    await user.click(screen.getByRole('button', { name: 'Expand' }))
+    expect(screen.getByLabelText('Strategy Name')).toHaveValue('EMA15 + Hist')
   })
 
   it('renders equity chart scales and hover values after a backtest run', async () => {

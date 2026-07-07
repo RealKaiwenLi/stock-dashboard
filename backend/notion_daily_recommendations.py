@@ -31,6 +31,7 @@ class DateRange:
 
 
 LABEL_KEY_MAP = {
+    "模型版本": "modelVersion",
     "最新完成日线日期": "latestBarDate",
     "最新收盘价": "latestClose",
     "当前收盘后状态": "holdAfterClose",

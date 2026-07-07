@@ -13,6 +13,7 @@ const data = {
       action: 'HOLD',
       holdForNextOpen: 'QLD',
       latestBarDate: '2026-07-01',
+      modelVersion: '1.0.0',
       macd: 1.2,
       hist: 0.3,
       exitEmaLabel: 'EMA15',
@@ -26,6 +27,7 @@ const data = {
       action: 'SWITCH_TO_TQQQ',
       holdForNextOpen: 'TQQQ',
       latestBarDate: '2026-07-02',
+      modelVersion: '1.0.1',
       macd: 2.1,
       hist: 0.6,
       exitEmaLabel: 'EMA12',
@@ -66,6 +68,7 @@ describe('DailyRecommendationCalendar', () => {
     expect(screen.getByRole('button', { name: '2026-07-02 recommends QLD, action HOLD' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '2026-07-04 recommends TQQQ, action SWITCH_TO_TQQQ' })).toBeInTheDocument()
     expect(screen.getByText('EMA12')).toBeInTheDocument()
+    expect(screen.getByText('1.0.1')).toBeInTheDocument()
   })
 
   it('selects a calendar day and shows that day detail', async () => {
@@ -92,6 +95,7 @@ describe('DailyRecommendationCalendar', () => {
 
     expect(screen.getByLabelText('Recommendation detail')).toHaveTextContent('QLD')
     expect(screen.getByText('EMA15')).toBeInTheDocument()
+    expect(screen.getByText('1.0.0')).toBeInTheDocument()
   })
 
   it('renders loading, empty and error states', () => {

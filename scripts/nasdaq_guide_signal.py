@@ -21,6 +21,27 @@ def load_config(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def resolve_active_model(config: dict[str, object]) -> dict[str, object]:
+    if "model_versions" not in config:
+        model = dict(config["model"])
+        model.setdefault("version", "legacy")
+        return model
+
+    model_versions = config["model_versions"]
+    if not isinstance(model_versions, dict) or not model_versions:
+        raise ValueError("model_versions must be a non-empty object")
+
+    active_version = str(config.get("active_model_version") or "")
+    if not active_version:
+        raise ValueError("active_model_version is required when model_versions is configured")
+    if active_version not in model_versions:
+        raise ValueError(f"active_model_version not found in model_versions: {active_version}")
+
+    model = dict(model_versions[active_version])
+    model.setdefault("version", active_version)
+    return model
+
+
 def compute_macd(close: pd.Series, fast: int, slow: int, signal: int) -> pd.DataFrame:
     ema_fast = close.ewm(span=fast, adjust=False).mean()
     ema_slow = close.ewm(span=slow, adjust=False).mean()
@@ -98,7 +119,7 @@ def fetch_history(symbol: str, range_: str, max_retries: int = 3) -> pd.DataFram
 
 
 def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str, object]:
-    model = config["model"]
+    model = resolve_active_model(config)
     macd_params = model["macd"]
     signal_symbol = str(model["signal_symbol"])
     risk_symbol = str(model["risk_symbol"])
@@ -137,6 +158,7 @@ def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str
     action = f"SWITCH_TO_{risk_symbol}" if pending == risk_symbol else f"SWITCH_TO_{signal_symbol}" if pending == signal_symbol else "HOLD"
 
     return {
+        "model_version": str(model["version"]),
         "model_name": str(model["name"]),
         "signal_symbol": signal_symbol,
         "risk_symbol": risk_symbol,
@@ -176,6 +198,7 @@ def markdown_bool(value: object) -> str:
 def signal_table_rows(result: dict[str, object]) -> list[tuple[str, object, str]]:
     exit_ema_label = str(result["exit_ema_label"])
     return [
+        ("模型版本", result["model_version"], "当前启用的每日推荐模型版本"),
         ("最新完成日线日期", result["latest_bar_date"], "Yahoo 已完成的最新日线"),
         ("最新收盘价", result["latest_close"], "用于计算均线和 MACD 的收盘价"),
         ("当前收盘后状态", result["hold_after_close"], "跑完最新日线后，策略当前持仓"),
@@ -250,6 +273,7 @@ def build_markdown_report(result: dict[str, object]) -> str:
     lines = [
         f"# 纳斯达克指引 {result['latest_bar_date']}",
         "",
+        f"- 模型版本：`{result['model_version']}`",
         f"- 策略：`{result['model_name']}`",
         f"- 执行口径：`{result['execution']}`",
         f"- 数据源：`{result['data_source']}`",
@@ -359,6 +383,7 @@ def build_notion_children(result: dict[str, object]) -> list[dict]:
     table_rows.extend(notion_table_row([label, value, note]) for label, value, note in rows)
     explanation_blocks = [notion_paragraph(line) for line in build_decision_explanation(result).splitlines() if line.strip()]
     return [
+        notion_bulleted_item(f"模型版本：{result['model_version']}"),
         notion_bulleted_item(f"策略：{result['model_name']}"),
         notion_bulleted_item(f"执行口径：{result['execution']}"),
         notion_bulleted_item(f"数据源：{result['data_source']}"),

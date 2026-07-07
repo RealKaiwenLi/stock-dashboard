@@ -5,18 +5,36 @@
     "symbol": "QQQ",
     "range": "5y"
   },
-  "model": {
-    "name": "MACD(12,26,9)金叉买QLD / EMA15退回QQQ / 永不转现金",
-    "signal_symbol": "QQQ",
-    "risk_symbol": "QLD",
-    "macd": {
-      "fast": 12,
-      "slow": 26,
-      "signal": 9
+  "active_model_version": "1.0.1",
+  "model_versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "name": "MACD(12,26,9)金叉买QLD / EMA15+Hist>0退回QQQ / 永不转现金",
+      "signal_symbol": "QQQ",
+      "risk_symbol": "QLD",
+      "macd": {
+        "fast": 12,
+        "slow": 26,
+        "signal": 9
+      },
+      "exit_ema": 15,
+      "exit_requires_positive_hist": true,
+      "sma200_cash": false
     },
-    "exit_ema": 15,
-    "exit_requires_positive_hist": true,
-    "sma200_cash": false
+    "1.0.1": {
+      "version": "1.0.1",
+      "name": "MACD(24,60,5)金叉买TQQQ / EMA15+Hist>0退回QQQ / 永不转现金",
+      "signal_symbol": "QQQ",
+      "risk_symbol": "TQQQ",
+      "macd": {
+        "fast": 24,
+        "slow": 60,
+        "signal": 5
+      },
+      "exit_ema": 15,
+      "exit_requires_positive_hist": true,
+      "sma200_cash": false
+    }
   },
   "execution": "T日收盘确认 / T+1开盘成交"
 }

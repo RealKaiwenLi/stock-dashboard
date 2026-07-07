@@ -159,6 +159,10 @@ export function DailyRecommendationCalendar({
                   <dd>{selected.latestBarDate ?? '-'}</dd>
                 </div>
                 <div>
+                  <dt>{copy.modelVersion}</dt>
+                  <dd>{selected.modelVersion ?? '-'}</dd>
+                </div>
+                <div>
                   <dt>MACD</dt>
                   <dd>{formatValue(selected.macd)}</dd>
                 </div>

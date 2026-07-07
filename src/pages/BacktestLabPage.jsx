@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { createChart, LineSeries } from 'lightweight-charts'
 import { createStrategy, DEFAULT_BACKTEST_EXPERIMENT, runBacktestExperiment } from '../services/backtestService'
+import { createStrategyFingerprint, readStrategyFavorites, removeStrategyFavorite, saveStrategyFavorite } from '../services/strategyFavorites'
 import { getBacktestCopy } from '../i18n/dashboardCopy'
 
 const MAX_STRATEGIES = 5
@@ -372,20 +373,45 @@ function SortableHeader({ column, sortConfig, onSort, copy }) {
   )
 }
 
-function StrategyEditor({ strategy, index, onChange, onDuplicate, onRemove, canRemove, canDuplicate, copy }) {
+function StrategyEditor({
+  strategy,
+  index,
+  onChange,
+  onDuplicate,
+  onRemove,
+  onFavorite,
+  onToggleCollapsed,
+  isCollapsed,
+  isFavorite,
+  canRemove,
+  canDuplicate,
+  copy,
+}) {
   function patch(nextPatch) {
     onChange({ ...strategy, ...nextPatch })
   }
 
   return (
-    <section className="dashboard-card strategy-editor">
+    <section className="dashboard-card strategy-editor" aria-label={copy.strategy.cardLabel(index, strategy.name)}>
       <div className="strategy-editor-header">
-        <span className="status-pill">{copy.strategy.label(index)}</span>
-        <div>
+        <button type="button" className="strategy-disclosure" onClick={onToggleCollapsed} aria-expanded={!isCollapsed} aria-label={isCollapsed ? copy.strategy.expand : copy.strategy.collapse}>
+          <span className="strategy-disclosure-icon" aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
+          <span className="status-pill">{copy.strategy.label(index)}</span>
+          <span className="strategy-disclosure-copy">
+            <strong>{strategy.name}</strong>
+            <span>{copy.strategy.assets(strategy.signalAsset, strategy.riskAsset, strategy.fallbackAsset)}</span>
+          </span>
+        </button>
+        <div className="strategy-editor-actions">
+          <button type="button" className="strategy-favorite-button" onClick={onFavorite} aria-label={copy.strategy.favorite} title={copy.strategy.favorite} aria-pressed={isFavorite}>
+            <span aria-hidden="true">{isFavorite ? '★' : '☆'}</span>
+          </button>
           <button type="button" onClick={onDuplicate} disabled={!canDuplicate}>{copy.strategy.duplicate}</button>
           <button type="button" onClick={onRemove} disabled={!canRemove}>{copy.strategy.remove}</button>
         </div>
       </div>
+      {isCollapsed ? null : (
+        <div className="strategy-editor-body">
       <label>
         {copy.strategy.name}
         <input value={strategy.name} onChange={(event) => patch({ name: event.target.value })} />
@@ -426,6 +452,8 @@ function StrategyEditor({ strategy, index, onChange, onDuplicate, onRemove, canR
           copy={copy}
         />
       </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -440,6 +468,8 @@ export function BacktestLabPage() {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [sortConfig, setSortConfig] = useState({ key: 'rank', direction: 'asc' })
+  const [favoriteStrategies, setFavoriteStrategies] = useState(() => readStrategyFavorites())
+  const [collapsedStrategyIds, setCollapsedStrategyIds] = useState(() => new Set())
 
   const selectedResult = useMemo(() => {
     return result?.strategies?.find((strategy) => strategy.id === selectedStrategyId) || result?.strategies?.[0]
@@ -478,6 +508,10 @@ export function BacktestLabPage() {
     })
   }, [copy, experiment.benchmark, result, sortConfig])
 
+  const favoriteFingerprints = useMemo(() => {
+    return new Set(favoriteStrategies.map((favorite) => favorite.fingerprint))
+  }, [favoriteStrategies])
+
   function patchExperiment(nextPatch) {
     setExperiment((current) => ({ ...current, ...nextPatch }))
   }
@@ -493,6 +527,18 @@ export function BacktestLabPage() {
 
   function changeStrategy(id, nextStrategy) {
     setExperiment((current) => ({ ...current, strategies: updateStrategy(current.strategies, id, () => nextStrategy) }))
+  }
+
+  function toggleStrategyCollapsed(id) {
+    setCollapsedStrategyIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   function addStrategy() {
@@ -513,10 +559,36 @@ export function BacktestLabPage() {
     })
   }
 
+  function favoriteStrategy(strategy) {
+    setFavoriteStrategies(saveStrategyFavorite(strategy))
+  }
+
+  function addFavoriteStrategy(favorite) {
+    setExperiment((current) => {
+      if (current.strategies.length >= MAX_STRATEGIES) return current
+      const next = {
+        ...createStrategy(current.strategies.length + 1, favorite.strategy),
+        name: favorite.strategy.name,
+      }
+      setSelectedStrategyId(next.id)
+      return { ...current, strategies: [...current.strategies, next] }
+    })
+  }
+
+  function removeFavoriteStrategy(id) {
+    setFavoriteStrategies(removeStrategyFavorite(id))
+  }
+
   function removeStrategy(id) {
     setExperiment((current) => {
       const next = current.strategies.filter((strategy) => strategy.id !== id)
       setSelectedStrategyId(next[0]?.id)
+      setCollapsedStrategyIds((currentIds) => {
+        if (!currentIds.has(id)) return currentIds
+        const nextIds = new Set(currentIds)
+        nextIds.delete(id)
+        return nextIds
+      })
       return next.length ? { ...current, strategies: next } : current
     })
   }
@@ -547,42 +619,73 @@ export function BacktestLabPage() {
       </header>
 
       <form className="backtest-layout" onSubmit={runExperiment}>
-        <section className="dashboard-card backtest-controls">
-          <div className="section-heading">
-            <h2>{copy.controls.title}</h2>
-            <span className="status-pill">{copy.status[status]}</span>
-          </div>
-          <label>
-            {copy.controls.experimentName}
-            <input value={experiment.name} onChange={(event) => patchExperiment({ name: event.target.value })} />
-          </label>
-          <div className="backtest-form-grid">
+        <div className="backtest-left-column">
+          <section className="dashboard-card backtest-controls">
+            <div className="section-heading">
+              <h2>{copy.controls.title}</h2>
+              <span className="status-pill">{copy.status[status]}</span>
+            </div>
             <label>
-              {copy.controls.start}
-              <input type="date" value={experiment.startDate} onChange={(event) => patchExperiment({ startDate: event.target.value })} />
+              {copy.controls.experimentName}
+              <input value={experiment.name} onChange={(event) => patchExperiment({ name: event.target.value })} />
             </label>
-            <label>
-              {copy.controls.end}
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="\d{4}-\d{2}-\d{2}"
-                placeholder="YYYY-MM-DD"
-                value={experiment.endDate}
-                onChange={(event) => patchExperiment({ endDate: event.target.value })}
-              />
-            </label>
-            <label>
-              {copy.controls.benchmark}
-              <input value={experiment.benchmark} onChange={(event) => patchExperiment({ benchmark: normalizeTicker(event.target.value) })} />
-            </label>
-          </div>
-          <p className="helper-text">{copy.controls.helper}</p>
-          <button className="primary-action" type="submit" disabled={status === 'running'}>
-            {status === 'running' ? copy.controls.running : copy.controls.run}
-          </button>
-          {error ? <p className="backtest-error">{error}</p> : null}
-        </section>
+            <div className="backtest-form-grid">
+              <label>
+                {copy.controls.start}
+                <input type="date" value={experiment.startDate} onChange={(event) => patchExperiment({ startDate: event.target.value })} />
+              </label>
+              <label>
+                {copy.controls.end}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d{4}-\d{2}-\d{2}"
+                  placeholder="YYYY-MM-DD"
+                  value={experiment.endDate}
+                  onChange={(event) => patchExperiment({ endDate: event.target.value })}
+                />
+              </label>
+              <label>
+                {copy.controls.benchmark}
+                <input value={experiment.benchmark} onChange={(event) => patchExperiment({ benchmark: normalizeTicker(event.target.value) })} />
+              </label>
+            </div>
+            <p className="helper-text">{copy.controls.helper}</p>
+            <button className="primary-action" type="submit" disabled={status === 'running'}>
+              {status === 'running' ? copy.controls.running : copy.controls.run}
+            </button>
+            {error ? <p className="backtest-error">{error}</p> : null}
+          </section>
+
+          <section className="favorite-strategies" aria-label={copy.favorites.section}>
+            <div className="favorite-strategies-header">
+              <h3>{copy.favorites.section}</h3>
+              <span className="helper-text">{copy.favorites.helper}</span>
+            </div>
+            {favoriteStrategies.length ? (
+              <div className="favorite-strategy-list">
+                {favoriteStrategies.map((favorite) => (
+                  <article className="favorite-strategy-item" key={favorite.id}>
+                    <div>
+                      <strong>{favorite.name}</strong>
+                      <span>{copy.favorites.assets(favorite.strategy.signalAsset, favorite.strategy.riskAsset, favorite.strategy.fallbackAsset)}</span>
+                    </div>
+                    <div className="favorite-strategy-actions">
+                      <button type="button" onClick={() => addFavoriteStrategy(favorite)} disabled={experiment.strategies.length >= MAX_STRATEGIES}>
+                        {copy.favorites.add}
+                      </button>
+                      <button type="button" onClick={() => removeFavoriteStrategy(favorite.id)}>
+                        {copy.favorites.remove}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="helper-text">{copy.favorites.empty}</p>
+            )}
+          </section>
+        </div>
 
         <section className="strategy-stack" aria-label={copy.strategy.section}>
           <div className="section-heading">
@@ -596,6 +699,10 @@ export function BacktestLabPage() {
               onChange={(nextStrategy) => changeStrategy(strategy.id, nextStrategy)}
               onDuplicate={() => duplicateStrategy(strategy)}
               onRemove={() => removeStrategy(strategy.id)}
+              onFavorite={() => favoriteStrategy(strategy)}
+              onToggleCollapsed={() => toggleStrategyCollapsed(strategy.id)}
+              isCollapsed={collapsedStrategyIds.has(strategy.id)}
+              isFavorite={favoriteFingerprints.has(createStrategyFingerprint(strategy))}
               canRemove={experiment.strategies.length > 1}
               canDuplicate={experiment.strategies.length < MAX_STRATEGIES}
               copy={copy}
