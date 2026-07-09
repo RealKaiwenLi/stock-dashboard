@@ -163,6 +163,9 @@ def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str
         "signal_symbol": signal_symbol,
         "risk_symbol": risk_symbol,
         "macd_params": f"{int(macd_params['fast'])},{int(macd_params['slow'])},{int(macd_params['signal'])}",
+        "macd_fast": int(macd_params["fast"]),
+        "macd_slow": int(macd_params["slow"]),
+        "macd_signal": int(macd_params["signal"]),
         "exit_ema_label": f"EMA{exit_ema_span}",
         "latest_bar_date": latest["date"].date().isoformat(),
         "latest_close": round(float(latest["close"]), 4),
@@ -197,6 +200,9 @@ def markdown_bool(value: object) -> str:
 
 def signal_table_rows(result: dict[str, object]) -> list[tuple[str, object, str]]:
     exit_ema_label = str(result["exit_ema_label"])
+    macd_fast = int(result["macd_fast"])
+    macd_slow = int(result["macd_slow"])
+    macd_signal = int(result["macd_signal"])
     return [
         ("模型版本", result["model_version"], "当前启用的每日推荐模型版本"),
         ("最新完成日线日期", result["latest_bar_date"], "Yahoo 已完成的最新日线"),
@@ -204,8 +210,8 @@ def signal_table_rows(result: dict[str, object]) -> list[tuple[str, object, str]
         ("当前收盘后状态", result["hold_after_close"], "跑完最新日线后，策略当前持仓"),
         ("次日开盘动作", result["action"], "下一交易日开盘是否需要切换"),
         ("次日开盘应持有", result["hold_for_next_open"], "动作执行后应持有的资产"),
-        ("MACD", result["macd"], "EMA12 - EMA26"),
-        ("Signal", result["signal"], "MACD 线的 EMA9"),
+        ("MACD", result["macd"], f"EMA{macd_fast} - EMA{macd_slow}"),
+        ("Signal", result["signal"], f"MACD 线的 EMA{macd_signal}"),
         ("Hist", result["hist"], "MACD - Signal"),
         (exit_ema_label, result["exit_ema"], "退出观察均线"),
         ("当日金叉", markdown_bool(result["signal_golden_cross"]), "MACD 线上穿 Signal 线"),
