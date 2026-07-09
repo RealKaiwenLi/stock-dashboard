@@ -23,3 +23,14 @@
    - `npm run build`
    - `npm run lint`
    - `python3 -m py_compile backend/app.py`
+
+## CAPE 风险过滤任务
+
+8. 为策略配置增加 `riskFilter.cape.enabled/max`，默认关闭。
+9. 在策略编辑器加入 CAPE 风险过滤开关和阈值输入，并更新中英文文案。
+10. 让策略收藏保存和恢复 CAPE 配置。
+11. 后端实现 CAPE 月度数据抓取、TTL 缓存、下月可用对齐和数据审计。
+12. 将回测持仓逻辑扩展为“基础趋势状态 + CAPE 风险许可”，支持 CAPE 恢复后自动重新进入 Risk Asset。
+13. 在当前信号和交易记录中展示 CAPE 条件与过滤切换原因。
+14. 添加前端 payload 测试和后端状态机测试。
+15. 运行完整验证命令。

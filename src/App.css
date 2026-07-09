@@ -1544,6 +1544,22 @@
   gap: 10px;
 }
 
+.risk-filter-section {
+  padding-top: 2px;
+}
+
+.risk-filter-section > label:not(.backtest-checkbox) {
+  max-width: 180px;
+}
+
+.backtest-helper {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
 .rule-row {
   display: grid;
   gap: 10px;

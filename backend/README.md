@@ -22,6 +22,18 @@ POST /api/backtests
 
 Runs up to five strategy candidates against Yahoo Finance daily bars.
 
+Strategies can optionally enable a monthly CAPE risk filter:
+
+```json
+{
+  "riskFilter": {
+    "cape": { "enabled": true, "max": 30 }
+  }
+}
+```
+
+CAPE history is loaded from Multpl's Shiller PE table, cached in memory for 24 hours, and delayed until the next calendar month before it can affect a trade.
+
 ```http
 GET /api/daily-recommendations?from=YYYY-MM-DD&to=YYYY-MM-DD
 ```

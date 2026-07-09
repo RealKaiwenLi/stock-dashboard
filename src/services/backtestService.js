@@ -27,6 +27,9 @@ export const DEFAULT_BACKTEST_EXPERIMENT = {
           { type: 'hist_positive', fast: 12, slow: 26, signal: 9 },
         ],
       },
+      riskFilter: {
+        cape: { enabled: false, max: 30 },
+      },
     },
   ],
 }

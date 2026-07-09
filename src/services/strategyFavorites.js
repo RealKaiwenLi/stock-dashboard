@@ -96,6 +96,7 @@ function normalizeStrategyTemplate(strategy) {
     fallbackAsset: normalizeTicker(strategy.fallbackAsset),
     entry: clone(strategy.entry),
     exit: clone(strategy.exit),
+    riskFilter: clone(strategy.riskFilter),
   }
 }
 

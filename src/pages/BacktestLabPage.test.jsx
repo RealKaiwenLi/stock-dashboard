@@ -146,6 +146,30 @@ describe('BacktestLabPage', () => {
     expect(request.strategies[0].exit.rules.map((rule) => rule.type)).toEqual(['ma_break', 'hist_positive', 'price_breakdown'])
   })
 
+  it('adds an optional CAPE risk filter to the backtest payload', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => backtestResult,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderBacktest()
+
+    expect(screen.getByLabelText('Enable CAPE filter')).not.toBeChecked()
+    expect(screen.getByLabelText('Maximum CAPE')).toBeDisabled()
+
+    await user.click(screen.getByLabelText('Enable CAPE filter'))
+    await user.clear(screen.getByLabelText('Maximum CAPE'))
+    await user.type(screen.getByLabelText('Maximum CAPE'), '30')
+    await user.click(screen.getByRole('button', { name: 'Run Backtest' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(request.strategies[0].riskFilter).toEqual({
+      cape: { enabled: true, max: 30 },
+    })
+  })
+
   it('renders Chinese copy when the shell language is Chinese', () => {
     renderBacktest('zh')
 

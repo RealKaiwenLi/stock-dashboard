@@ -60,3 +60,18 @@
 ## Open Questions
 
 - `Hist > 0` 是否也应该作为入场规则类型开放？本次按 PM 需求只把它作为退出规则普通条件处理，避免策略语义突然变宽。
+
+## CAPE 风险过滤扩展
+
+- 前端策略增加可选配置：
+  - `riskFilter: { cape: { enabled: boolean, max: number } }`
+- CAPE 不进入普通入场/退出规则数组，避免恢复后必须等待下一次交叉信号。
+- 后端从 Multpl 的 Shiller PE 月度历史表读取 CAPE，不新增依赖，并使用进程内 TTL 缓存减少外部请求。
+- 每个月的 CAPE 观测延迟到下一个月月初才可用，再按交易日向后填充。
+- 回测引擎维护独立的基础 `Risk On` 状态：
+  - 入场规则组触发后开启。
+  - 退出规则组触发后关闭。
+  - 实际持仓为 `Risk On AND CAPE <= max ? Risk Asset : Fallback Asset`。
+- 未启用 CAPE 时沿用同一状态机，行为保持兼容。
+- 最新信号 conditions 增加 CAPE 条件；交易原因区分基础入场/退出与 CAPE 过滤切换。
+- 测试覆盖前端 payload、收藏序列化、CAPE 延迟对齐和过滤恢复后无需新入场信号。

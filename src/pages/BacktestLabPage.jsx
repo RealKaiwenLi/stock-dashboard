@@ -97,6 +97,8 @@ function localizeSummaryName(name, copy) {
 
 function localizeConditionLabel(label, copy) {
   if (label === 'Full exit signal') return copy.values.fullExitSignal
+  const capeMatch = String(label).match(/^CAPE <= (.+)$/)
+  if (capeMatch) return copy.values.capeMaximum(capeMatch[1])
   const closeBelowMatch = String(label).match(/^Close < (.+)$/)
   if (closeBelowMatch) return copy.values.closeBelow(closeBelowMatch[1])
   return label
@@ -451,6 +453,47 @@ function StrategyEditor({
           onChange={(exit) => patch({ exit })}
           copy={copy}
         />
+      </div>
+      <div className="rule-section risk-filter-section">
+        <h3>{copy.strategy.riskFilter}</h3>
+        <label className="backtest-checkbox">
+          <input
+            type="checkbox"
+            checked={Boolean(strategy.riskFilter?.cape?.enabled)}
+            onChange={(event) => patch({
+              riskFilter: {
+                ...strategy.riskFilter,
+                cape: {
+                  max: strategy.riskFilter?.cape?.max ?? 30,
+                  ...strategy.riskFilter?.cape,
+                  enabled: event.target.checked,
+                },
+              },
+            })}
+          />
+          {copy.strategy.capeEnabled}
+        </label>
+        <label>
+          {copy.strategy.capeMaximum}
+          <input
+            type="number"
+            min="1"
+            step="0.5"
+            disabled={!strategy.riskFilter?.cape?.enabled}
+            value={strategy.riskFilter?.cape?.max ?? 30}
+            onChange={(event) => patch({
+              riskFilter: {
+                ...strategy.riskFilter,
+                cape: {
+                  ...strategy.riskFilter?.cape,
+                  enabled: Boolean(strategy.riskFilter?.cape?.enabled),
+                  max: Number(event.target.value),
+                },
+              },
+            })}
+          />
+        </label>
+        <p className="backtest-helper">{copy.strategy.capeHelper}</p>
       </div>
         </div>
       )}

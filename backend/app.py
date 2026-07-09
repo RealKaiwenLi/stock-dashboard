@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
+from html.parser import HTMLParser
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -17,9 +20,12 @@ from notion_daily_recommendations import DailyRecommendationError, fetch_daily_r
 
 LA_TZ = ZoneInfo("America/Los_Angeles")
 MAX_STRATEGIES = 5
+CAPE_HISTORY_URL = "https://www.multpl.com/shiller-pe/table/by-month"
+CAPE_CACHE_TTL_SECONDS = 24 * 60 * 60
 
 
 app = Flask(__name__)
+_cape_cache: tuple[float, pd.DataFrame] | None = None
 
 
 @app.after_request
@@ -34,6 +40,75 @@ def add_cors_headers(response):
 class AssetBars:
     symbol: str
     frame: pd.DataFrame
+
+
+class TableCellParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.cells: list[str] = []
+        self._inside_cell = False
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs):
+        if tag.lower() == "td":
+            self._inside_cell = True
+            self._parts = []
+
+    def handle_data(self, data: str):
+        if self._inside_cell:
+            self._parts.append(data)
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "td" and self._inside_cell:
+            self.cells.append(" ".join("".join(self._parts).split()))
+            self._inside_cell = False
+
+
+def parse_cape_history_html(html: str) -> pd.DataFrame:
+    parser = TableCellParser()
+    parser.feed(html)
+    records = []
+    for index in range(len(parser.cells) - 1):
+        date = pd.to_datetime(parser.cells[index], errors="coerce")
+        value_match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*", parser.cells[index + 1])
+        if pd.notna(date) and value_match:
+            records.append({"date": date.normalize(), "cape": float(value_match.group(1))})
+    frame = pd.DataFrame.from_records(records)
+    if frame.empty:
+        raise RuntimeError("CAPE source returned no usable monthly observations")
+    return frame.drop_duplicates("date").sort_values("date").reset_index(drop=True)
+
+
+def fetch_cape_history() -> pd.DataFrame:
+    global _cape_cache
+    now = time.monotonic()
+    if _cape_cache and now - _cape_cache[0] < CAPE_CACHE_TTL_SECONDS:
+        return _cape_cache[1].copy()
+
+    request_obj = Request(CAPE_HISTORY_URL, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
+    try:
+        with urlopen(request_obj, timeout=30) as response:
+            frame = parse_cape_history_html(response.read().decode("utf-8"))
+    except (URLError, TimeoutError) as exc:
+        raise RuntimeError(f"CAPE request failed: {exc}") from exc
+    _cape_cache = (now, frame)
+    return frame.copy()
+
+
+def attach_cape_history(df: pd.DataFrame, cape_history: pd.DataFrame) -> pd.DataFrame:
+    delayed = cape_history.copy()
+    delayed["available_date"] = delayed["date"] + pd.offsets.MonthBegin(1)
+    delayed = delayed[["available_date", "cape"]].sort_values("available_date")
+    aligned = pd.merge_asof(
+        df.sort_values("date"),
+        delayed,
+        left_on="date",
+        right_on="available_date",
+        direction="backward",
+    )
+    if aligned["cape"].isna().all():
+        raise ValueError("CAPE data does not overlap the selected backtest range")
+    return aligned.drop(columns=["available_date"]).reset_index(drop=True)
 
 
 def yahoo_chart_url(symbol: str, range_: str) -> str:
@@ -127,6 +202,19 @@ def collect_required_symbols(payload: dict) -> list[str]:
         if fallback != "CASH":
             symbols.add(fallback)
     return sorted(symbol for symbol in symbols if symbol != "CASH")
+
+
+def strategy_uses_cape(strategy: dict) -> bool:
+    return bool(strategy.get("riskFilter", {}).get("cape", {}).get("enabled"))
+
+
+def cape_filter_config(strategy: dict) -> tuple[bool, float]:
+    cape = strategy.get("riskFilter", {}).get("cape", {})
+    enabled = bool(cape.get("enabled"))
+    maximum = float(cape.get("max", 30))
+    if enabled and (not math.isfinite(maximum) or maximum <= 0):
+        raise ValueError("CAPE maximum must be a positive number")
+    return enabled, maximum
 
 
 def build_aligned_frame(assets: dict[str, AssetBars], start_date: pd.Timestamp | None, end_date: pd.Timestamp | None) -> tuple[pd.DataFrame, list[dict]]:
@@ -379,9 +467,19 @@ def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary
     signal_close = df[f"{signal_asset}_close"]
     entry_signal = build_entry_signal(df, signal_close, strategy)
     exit_signal, diagnostics = build_exit_signal(signal_close, strategy)
+    cape_enabled, cape_maximum = cape_filter_config(strategy)
+    if cape_enabled and "cape" not in df:
+        raise ValueError("CAPE data is required by the selected risk filter")
+    cape_permitted = (
+        (df["cape"].notna() & (df["cape"] <= cape_maximum))
+        if cape_enabled
+        else pd.Series(True, index=df.index)
+    )
 
     held = fallback_asset
     pending: str | None = None
+    pending_reason: str | None = None
+    base_risk_on = False
     values = [1.0]
     trades = []
     switches = 0
@@ -395,7 +493,8 @@ def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary
             held = pending
             pending = None
             switches += 1
-            reason_prefix = "Entry signal" if held == risk_asset else "Exit signal"
+            reason_prefix = pending_reason or ("Entry signal" if held == risk_asset else "Exit signal")
+            pending_reason = None
             trades.append(
                 {
                     "signalDate": df.at[idx - 1, "date"].date().isoformat(),
@@ -409,10 +508,20 @@ def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary
 
         values.append(values[-1] * gross)
 
-        if held != risk_asset and bool(entry_signal.iloc[idx]):
-            pending = risk_asset
-        elif held == risk_asset and bool(exit_signal.iloc[idx]):
-            pending = fallback_asset
+        if not base_risk_on and bool(entry_signal.iloc[idx]):
+            base_risk_on = True
+        elif base_risk_on and bool(exit_signal.iloc[idx]):
+            base_risk_on = False
+
+        target = risk_asset if base_risk_on and bool(cape_permitted.iloc[idx]) else fallback_asset
+        if target != held:
+            pending = target
+            if cape_enabled and base_risk_on and target == fallback_asset:
+                pending_reason = "CAPE risk filter"
+            elif cape_enabled and base_risk_on and target == risk_asset and not bool(entry_signal.iloc[idx]):
+                pending_reason = "CAPE risk filter cleared"
+            else:
+                pending_reason = "Entry signal" if target == risk_asset else "Exit signal"
 
     summary = summarize_returns(name, values, df["date"], switches)
     summary["winVsBenchmark"] = (summary["cagrPct"] or -999) > (benchmark_summary.get("cagrPct") or -999)
@@ -422,6 +531,15 @@ def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary
     latest_close = finite(signal_close.iloc[-1])
     latest_conditions = diagnostics["conditions"].copy()
     latest_conditions.append({"label": "Full exit signal", "value": diagnostics["logic"], "passed": bool(exit_signal.iloc[-1])})
+    if cape_enabled:
+        latest_cape = finite(df["cape"].iloc[-1])
+        latest_conditions.append(
+            {
+                "label": f"CAPE <= {cape_maximum:g}",
+                "value": round(latest_cape, 2) if latest_cape is not None else None,
+                "passed": bool(cape_permitted.iloc[-1]),
+            }
+        )
 
     return {
         "id": strategy.get("id") or f"strategy-{index + 1}",
@@ -501,6 +619,17 @@ def backtests():
     try:
         assets = {symbol: fetch_yahoo_history(symbol, range_) for symbol in collect_required_symbols(payload)}
         df, audit = build_aligned_frame(assets, start_date, end_date)
+        if any(strategy_uses_cape(strategy) for strategy in strategies):
+            cape_history = fetch_cape_history()
+            df = attach_cape_history(df, cape_history)
+            audit.append(
+                {
+                    "symbol": "CAPE",
+                    "startDate": cape_history["date"].iloc[0].date().isoformat(),
+                    "endDate": cape_history["date"].iloc[-1].date().isoformat(),
+                    "rows": int(len(cape_history)),
+                }
+            )
         if len(df) < 80:
             return jsonify({"error": "Aligned data has fewer than 80 daily bars", "dataAudit": audit}), 400
         benchmark_result = build_benchmark(df, benchmark)
