@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/create-sites-worker.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
