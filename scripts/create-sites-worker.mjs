@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
 const workerPath = resolve('dist/server/index.js')
+const runtimePath = resolve('scripts/sites-worker-runtime.js')
 
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -41,51 +42,8 @@ async function collectAssets(dir, prefix = '') {
 
 await collectAssets(resolve('dist'))
 
-const workerSource = `const assets = ${JSON.stringify(assets)};
-
-const cacheable = (pathname) => pathname.startsWith('/assets/');
-
-const serveAsset = (pathname) => {
-  const asset = assets[pathname];
-
-  if (!asset) {
-    return null;
-  }
-
-  const bytes = Uint8Array.from(atob(asset.body), (char) => char.charCodeAt(0));
-  return new Response(bytes, {
-    headers: {
-      'content-type': asset.contentType,
-      'cache-control': cacheable(pathname)
-        ? 'public, max-age=31536000, immutable'
-        : 'public, max-age=0, must-revalidate',
-    },
-  });
-};
-
-export default {
-  async fetch(request) {
-    const url = new URL(request.url);
-
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      return new Response('Method not allowed', { status: 405 });
-    }
-
-    if (url.pathname.startsWith('/api/')) {
-      return new Response('API is not available in this static deployment.', { status: 404 });
-    }
-
-    const asset = serveAsset(url.pathname === '/' ? '/index.html' : url.pathname);
-
-    if (asset) {
-      return request.method === 'HEAD' ? new Response(null, asset) : asset;
-    }
-
-    const fallback = serveAsset('/index.html');
-    return request.method === 'HEAD' ? new Response(null, fallback) : fallback;
-  },
-};
-`
+const runtimeSource = await readFile(runtimePath, 'utf8')
+const workerSource = runtimeSource.replace('__ASSETS_MANIFEST__', JSON.stringify(assets))
 
 await mkdir(dirname(workerPath), { recursive: true })
 await writeFile(workerPath, workerSource)
