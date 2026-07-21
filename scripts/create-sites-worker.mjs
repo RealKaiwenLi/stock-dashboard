@@ -43,7 +43,7 @@ async function collectAssets(dir, prefix = '') {
 await collectAssets(resolve('dist'))
 
 const runtimeSource = await readFile(runtimePath, 'utf8')
-const workerSource = runtimeSource.replace('__ASSETS_MANIFEST__', JSON.stringify(assets))
+const workerSource = runtimeSource.replace('const assets = __ASSETS_MANIFEST__', `const assets = ${JSON.stringify(assets)}`)
 
 await mkdir(dirname(workerPath), { recursive: true })
 await writeFile(workerPath, workerSource)
