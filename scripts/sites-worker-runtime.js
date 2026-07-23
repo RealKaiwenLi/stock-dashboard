@@ -7,10 +7,12 @@ const CAPE_HISTORY_URL = 'https://www.multpl.com/shiller-pe/table/by-month'
 const DAY_MS = 24 * 60 * 60 * 1000
 const CAPE_CACHE_TTL_MS = DAY_MS
 const DAILY_RECOMMENDATION_CACHE_TTL_MS = 15 * 60 * 1000
+const WEEKLY_BACKTEST_CACHE_TTL_MS = 15 * 60 * 1000
 const MAX_STRATEGIES = 5
 
 let capeCache = null
 const dailyRecommendationCache = new Map()
+let weeklyBacktestCache = null
 
 const json = (payload, status = 200) =>
   new Response(JSON.stringify(payload), {
@@ -71,19 +73,31 @@ const parseDateRange = (url) => {
   return { start, end }
 }
 
-const notionRequest = async (method, url, token, payload) => {
-  const response = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'Notion-Version': NOTION_VERSION,
-    },
-    body: payload ? JSON.stringify(payload) : undefined,
-  })
+const notionRequest = async (method, url, token, payload, maxAttempts = 4) => {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Notion-Version': NOTION_VERSION,
+      },
+      body: payload ? JSON.stringify(payload) : undefined,
+    })
 
-  if (!response.ok) {
+    if (response.ok) return response.json()
+
     const body = await response.text()
+    const retryable = response.status === 429 || response.status >= 500
+    if (retryable && attempt < maxAttempts) {
+      const retryAfterSeconds = Number(response.headers.get('retry-after'))
+      const delayMs = Number.isFinite(retryAfterSeconds)
+        ? retryAfterSeconds * 1000
+        : Math.min(500 * (2 ** (attempt - 1)), 4000)
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+      continue
+    }
+
     const error = new Error(response.status === 401 || response.status === 403
       ? 'Notion credentials cannot access the database.'
       : `Notion API ${response.status}: ${body}`)
@@ -91,8 +105,6 @@ const notionRequest = async (method, url, token, payload) => {
     error.status = 502
     throw error
   }
-
-  return response.json()
 }
 
 const richTextPlain = (items) => (items ?? []).map((item) => item.plain_text ?? '').join('').trim()
@@ -270,6 +282,114 @@ const handleDailyRecommendations = async (url, env) => {
       items: items.sort((a, b) => a.date.localeCompare(b.date)),
     }
     dailyRecommendationCache.set(cacheKey, { createdAt: Date.now(), payload })
+    return json(payload)
+  } catch (error) {
+    return json({ error: error.code ?? 'NOTION_REQUEST_FAILED', message: error.message }, error.status ?? 502)
+  }
+}
+
+const notionPropertyText = (property) => {
+  if (!property) return ''
+  if (property.type === 'title') return richTextPlain(property.title)
+  if (property.type === 'rich_text') return richTextPlain(property.rich_text)
+  if (property.type === 'select') return property.select?.name ?? ''
+  if (property.type === 'date') return property.date?.start ?? ''
+  if (property.type === 'number') return property.number
+  return ''
+}
+
+const queryWeeklyReportPages = async (databaseId, token, limit) => {
+  const response = await notionRequest('POST', `https://api.notion.com/v1/databases/${databaseId}/query`, token, {
+    filter: { property: '报告类型', select: { equals: '纳斯达克策略回测' } },
+    sorts: [{ property: 'Date', direction: 'descending' }],
+    page_size: Math.min(limit, 100),
+  })
+  return response.results ?? []
+}
+
+const queryNotionDatabaseRows = async (databaseId, token) => {
+  const rows = []
+  let cursor
+  do {
+    const payload = { page_size: 100, sorts: [{ property: '排名', direction: 'ascending' }] }
+    if (cursor) payload.start_cursor = cursor
+    const response = await notionRequest('POST', `https://api.notion.com/v1/databases/${databaseId}/query`, token, payload)
+    rows.push(...(response.results ?? []))
+    cursor = response.has_more ? response.next_cursor : null
+  } while (cursor)
+  return rows
+}
+
+const findPropertyByPrefix = (properties, prefix) => Object.entries(properties).find(([name]) => name.startsWith(prefix))?.[1]
+
+const parseWeeklyResultRow = (page) => {
+  const properties = page.properties ?? {}
+  return {
+    rank: notionPropertyText(properties['排名']),
+    strategy: notionPropertyText(properties['策略']),
+    score: notionPropertyText(properties['综合分']),
+    riskFlag: notionPropertyText(properties['风险标记']),
+    cagrPct: notionPropertyText(properties['年化收益%']),
+    excessCagrPct: notionPropertyText(properties['超额年化%']),
+    maxDrawdownPct: notionPropertyText(properties['最大回撤%']),
+    maxDrawdownRatio: notionPropertyText(findPropertyByPrefix(properties, '回撤/')),
+    sharpe: notionPropertyText(properties['夏普比率']),
+    rolling5yWinRate: notionPropertyText(properties['滚动5年胜率']),
+    dcaVsSignalPct: notionPropertyText(findPropertyByPrefix(properties, '定投领先')),
+    switchesPerYear: notionPropertyText(properties['年均换仓']),
+    note: notionPropertyText(properties['文本']),
+  }
+}
+
+const parseWeeklyIntro = (blocks) => {
+  const texts = blocks.map(blockText).filter(Boolean)
+  const valueAfter = (prefix) => texts.find((text) => text.startsWith(prefix))?.slice(prefix.length).replace(/[。；]$/, '') ?? null
+  return {
+    title: texts.find((text) => text.includes('策略周度验证')) ?? null,
+    generatedAt: valueAfter('生成时间：'),
+    latestBarDate: texts.find((text) => /策略周度验证 \d{4}-\d{2}-\d{2}/.test(text))?.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null,
+  }
+}
+
+const parseWeeklyReport = async (page, token) => {
+  const properties = page.properties ?? {}
+  const reportDate = notionPropertyText(properties.Date)
+  if (!reportDate) return null
+  const blocks = await listNotionChildren(page.id, token)
+  const childDatabase = blocks.find((block) => block.type === 'child_database')
+  const intro = parseWeeklyIntro(blocks)
+  const tickers = notionPropertyText(properties['Key Tickers']).split(',').map((item) => item.trim()).filter(Boolean)
+  const summary = childDatabase ? (await queryNotionDatabaseRows(childDatabase.id, token)).map(parseWeeklyResultRow) : []
+  return {
+    reportDate,
+    latestBarDate: intro.latestBarDate,
+    generatedAt: intro.generatedAt,
+    title: intro.title ?? notionPropertyText(properties['Doc name']),
+    signalSymbol: tickers[0] ?? null,
+    riskSymbol: tickers.slice(1).join(', ') || null,
+    notionUrl: page.url,
+    summary,
+  }
+}
+
+const handleWeeklyBacktests = async (url, env) => {
+  const token = env.NOTION_TOKEN
+  const databaseId = env.NOTION_DATABASE_ID
+  if (!token || !databaseId) return json({ error: 'NOTION_UNCONFIGURED', message: 'Notion token or database id is not configured.' }, 503)
+  const parsedLimit = Number(url.searchParams.get('limit') ?? 12)
+  const limit = Number.isInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 24) : 12
+  if (weeklyBacktestCache && Date.now() - weeklyBacktestCache.createdAt < WEEKLY_BACKTEST_CACHE_TTL_MS && weeklyBacktestCache.limit === limit) {
+    return json(weeklyBacktestCache.payload)
+  }
+  try {
+    const pages = await queryWeeklyReportPages(databaseId, token, limit)
+    const items = []
+    for (const page of pages) {
+      const item = await parseWeeklyReport(page, token)
+      if (item) items.push(item)
+    }
+    const payload = { items, source: 'notion', lastSyncedAt: new Date().toISOString(), cacheTtlSeconds: WEEKLY_BACKTEST_CACHE_TTL_MS / 1000 }
+    weeklyBacktestCache = { createdAt: Date.now(), limit, payload }
     return json(payload)
   } catch (error) {
     return json({ error: error.code ?? 'NOTION_REQUEST_FAILED', message: error.message }, error.status ?? 502)
@@ -796,6 +916,10 @@ export default {
 
     if (url.pathname === '/api/daily-recommendations' && request.method === 'GET') {
       return handleDailyRecommendations(url, env)
+    }
+
+    if (url.pathname === '/api/weekly-backtests' && request.method === 'GET') {
+      return handleWeeklyBacktests(url, env)
     }
 
     if (url.pathname === '/api/backtests' && request.method === 'POST') {

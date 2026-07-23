@@ -65,6 +65,13 @@ const copy = {
       fullExitSignal: '完整退出信号',
       dayLabel: (date, holding, action) => `${date} 推荐持有 ${holding}，动作 ${action}`,
     },
+    weeklyBacktests: {
+      eyebrow: 'Weekly Validation', title: '每周回测', weekSelector: '回测周次', weekOf: '报告',
+      report: '运行内容', latestBar: '最新行情日', assets: '回测标的', generatedAt: '运行时间',
+      loading: '正在读取每周回测...', empty: '暂无每周回测记录。', error: '每周回测暂不可用。', retry: '重试',
+      syncedAt: (value) => `同步于 ${value}`, openNotion: '打开 Notion 原文',
+      columns: { rank: '排名', strategy: '策略', score: '综合分', cagr: '年化收益', maxDrawdown: '最大回撤', sharpe: '夏普比率', winRate: '滚动5年胜率', switches: '年均换仓' },
+    },
     explanationTrigger: '如何计算？',
     chart: {
       intradayLine: (symbol) => `${symbol} 盘中走势折线图`,
@@ -165,6 +172,13 @@ const copy = {
       nextMonth: 'Next month',
       fullExitSignal: 'Full exit signal',
       dayLabel: (date, holding, action) => `${date} recommends ${holding}, action ${action}`,
+    },
+    weeklyBacktests: {
+      eyebrow: 'Weekly Validation', title: 'Weekly Backtests', weekSelector: 'Backtest weeks', weekOf: 'Report',
+      report: 'Run', latestBar: 'Latest bar', assets: 'Assets', generatedAt: 'Generated at',
+      loading: 'Loading weekly backtests...', empty: 'No weekly backtests yet.', error: 'Weekly backtests are unavailable.', retry: 'Retry',
+      syncedAt: (value) => `Synced at ${value}`, openNotion: 'Open Notion report',
+      columns: { rank: 'Rank', strategy: 'Strategy', score: 'Score', cagr: 'CAGR', maxDrawdown: 'Max drawdown', sharpe: 'Sharpe', winRate: 'Rolling 5Y win rate', switches: 'Switches/year' },
     },
     explanationTrigger: 'How is this calculated?',
     chart: {

@@ -177,6 +177,58 @@
   padding: 18px;
 }
 
+.weekly-backtest-section {
+  margin-top: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.backtest-week-strip {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 4px;
+  overflow-x: auto;
+}
+
+.backtest-week-strip button {
+  min-width: 132px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.backtest-week-strip button.selected {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 10%, var(--surface));
+  color: var(--text-strong);
+}
+
+.backtest-week-strip span,
+.weekly-backtest-meta span { display: block; font-size: 11px; color: var(--text-muted); }
+.backtest-week-strip strong,
+.weekly-backtest-meta strong { display: block; margin-top: 3px; color: var(--text-strong); }
+
+.weekly-backtest-meta {
+  display: grid;
+  grid-template-columns: 2fr repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.weekly-notion-link { display: inline-block; margin-top: 14px; }
+
 .section-heading-row {
   display: flex;
   align-items: flex-start;
@@ -1853,6 +1905,8 @@
     grid-template-columns: 1fr;
   }
 
+  .weekly-backtest-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
   .stock-price-values {
     justify-items: start;
   }
@@ -1879,6 +1933,9 @@
   .position-calendar-section {
     padding: 14px;
   }
+
+  .weekly-backtest-section { padding: 14px; }
+  .weekly-backtest-meta { grid-template-columns: 1fr; }
 
   .section-heading-row,
   .detail-heading {
