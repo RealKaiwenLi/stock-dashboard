@@ -257,7 +257,7 @@ describe('BacktestLabPage', () => {
     await user.selectOptions(screen.getByLabelText('冷却期间入场信号'), 'retain_latest')
 
     expect(screen.getByLabelText('新入场信号保留交易日数')).toHaveValue('5')
-    expect(screen.getByText(/信号出现当日算第 1 天/)).toBeInTheDocument()
+    expect(screen.getByText(/5 天 = 信号日 \+ 后续 4 个有效交易日/)).toBeInTheDocument()
     expect(screen.getByText(/冷却期间暂存最新入场信号，并保留 5 个交易日/)).toBeInTheDocument()
   })
 

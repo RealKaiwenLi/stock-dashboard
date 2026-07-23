@@ -2085,17 +2085,21 @@
 
 .post-exit-summary {
   margin: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface-soft));
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 500;
   line-height: 1.55;
 }
 
 .field-helper {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 500;
-  line-height: 1.45;
+  line-height: 1.4;
+}
+
+.post-exit-reentry .backtest-form-grid {
+  align-items: start;
 }
 
 .field-error {
