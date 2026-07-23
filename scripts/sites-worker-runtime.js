@@ -22,6 +22,7 @@ const json = (payload, status = 200) =>
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'Content-Type',
       'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'cache-control': 'no-store',
     },
   })
 
