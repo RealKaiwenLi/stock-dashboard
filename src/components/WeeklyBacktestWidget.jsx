@@ -10,7 +10,9 @@ const columns = [
   ['maxDrawdownPct', 'maxDrawdown'],
   ['maxDrawdownRatio', 'drawdownRatio'],
   ['sharpe', 'sharpe'],
-  ['rolling5yWinRate', 'winRate'],
+  ['rolling1yWinRate', 'winRate1y'],
+  ['rolling3yWinRate', 'winRate3y'],
+  ['rolling5yWinRate', 'winRate5y'],
   ['dcaVsSignalPct', 'dcaLead'],
   ['switchesPerYear', 'switches'],
   ['note', 'note'],
@@ -18,12 +20,12 @@ const columns = [
 
 const numericColumns = new Set([
   'rank', 'score', 'cagrPct', 'excessCagrPct', 'maxDrawdownPct',
-  'maxDrawdownRatio', 'sharpe', 'rolling5yWinRate', 'dcaVsSignalPct', 'switchesPerYear',
+  'maxDrawdownRatio', 'sharpe', 'rolling1yWinRate', 'rolling3yWinRate', 'rolling5yWinRate', 'dcaVsSignalPct', 'switchesPerYear',
 ])
 
 function formatMetric(key, value) {
   if (value == null) return '-'
-  if (key === 'rolling5yWinRate') return `${Number(value).toFixed(1)}%`
+  if (['rolling1yWinRate', 'rolling3yWinRate', 'rolling5yWinRate'].includes(key)) return `${Number(value).toFixed(1)}%`
   if (['cagrPct', 'excessCagrPct', 'maxDrawdownPct', 'dcaVsSignalPct'].includes(key)) return `${Number(value).toFixed(2)}%`
   if (key === 'rank') return value
   return typeof value === 'number' ? value.toFixed(2) : value

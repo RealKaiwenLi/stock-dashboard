@@ -70,7 +70,7 @@ const copy = {
       report: '运行内容', latestBar: '最新行情日', assets: '回测标的', generatedAt: '运行时间',
       loading: '正在读取每周回测...', empty: '暂无每周回测记录。', error: '每周回测暂不可用。', retry: '重试',
       syncedAt: (value) => `同步于 ${value}`, openNotion: '打开 Notion 原文',
-      columns: { rank: '排名', strategy: '策略', score: '综合分', riskFlag: '风险标记', cagr: '年化收益', excessCagr: '超额年化', maxDrawdown: '最大回撤', drawdownRatio: '回撤/QQQ', sharpe: '夏普比率', winRate: '滚动5年胜率', dcaLead: '定投领先QQQ', switches: '年均换仓', note: '文本' },
+      columns: { rank: '排名', strategy: '策略', score: '综合分', riskFlag: '风险标记', cagr: '年化收益', excessCagr: '超额年化', maxDrawdown: '最大回撤', drawdownRatio: '回撤/QQQ', sharpe: '夏普比率', winRate1y: '滚动1年胜率', winRate3y: '滚动3年胜率', winRate5y: '滚动5年胜率', dcaLead: '定投领先QQQ', switches: '年均换仓', note: '文本' },
     },
     explanationTrigger: '如何计算？',
     chart: {
@@ -178,7 +178,7 @@ const copy = {
       report: 'Run', latestBar: 'Latest bar', assets: 'Assets', generatedAt: 'Generated at',
       loading: 'Loading weekly backtests...', empty: 'No weekly backtests yet.', error: 'Weekly backtests are unavailable.', retry: 'Retry',
       syncedAt: (value) => `Synced at ${value}`, openNotion: 'Open Notion report',
-      columns: { rank: 'Rank', strategy: 'Strategy', score: 'Score', riskFlag: 'Risk flag', cagr: 'CAGR', excessCagr: 'Excess CAGR', maxDrawdown: 'Max drawdown', drawdownRatio: 'Drawdown/QQQ', sharpe: 'Sharpe', winRate: 'Rolling 5Y win rate', dcaLead: 'DCA lead vs QQQ', switches: 'Switches/year', note: 'Note' },
+      columns: { rank: 'Rank', strategy: 'Strategy', score: 'Score', riskFlag: 'Risk flag', cagr: 'CAGR', excessCagr: 'Excess CAGR', maxDrawdown: 'Max drawdown', drawdownRatio: 'Drawdown/QQQ', sharpe: 'Sharpe', winRate1y: 'Rolling 1Y win rate', winRate3y: 'Rolling 3Y win rate', winRate5y: 'Rolling 5Y win rate', dcaLead: 'DCA lead vs QQQ', switches: 'Switches/year', note: 'Note' },
     },
     explanationTrigger: 'How is this calculated?',
     chart: {

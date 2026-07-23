@@ -36,6 +36,8 @@ def display_columns(config: StrategyValidationConfig) -> dict[str, str]:
         "max_drawdown_pct": "最大回撤%",
         "max_drawdown_ratio_vs_signal": f"回撤/{config.symbols.signal}",
         "sharpe": "夏普比率",
+        "rolling_1y_win_rate": "滚动1年胜率",
+        "rolling_3y_win_rate": "滚动3年胜率",
         "rolling_5y_win_rate": "滚动5年胜率",
         "dca_vs_signal_pct": f"定投领先{config.symbols.signal}%",
         "switches_per_year": "年均换仓",
@@ -77,7 +79,7 @@ def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: st
         "- `最大回撤%`：从历史高点到后续低点的最大跌幅。",
         f"- `回撤/{config.symbols.signal}`：策略最大回撤除以 {config.symbols.signal} 最大回撤。",
         "- `夏普比率`：当前用年化收益除以年化波动率，未扣无风险利率。",
-        f"- `滚动5年胜率`：任意一天开始持有 5 年，策略跑赢 {config.symbols.signal} 的比例。",
+        f"- `滚动1/3/5年胜率`：任意一天开始分别持有 1、3、5 年，策略跑赢 {config.symbols.signal} 的比例。",
         f"- `定投领先{config.symbols.signal}%`：每月定投该策略的终值相对每月定投 {config.symbols.signal} 的领先幅度。",
         "- `年均换仓`：平均每年切换持仓的次数。",
         "",
@@ -92,7 +94,7 @@ def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: st
             value = row[col]
             if col == "risk_flag" and value == "HIGH_DD":
                 values.append("高回撤")
-            elif col == "rolling_5y_win_rate" and isinstance(value, float):
+            elif col in {"rolling_1y_win_rate", "rolling_3y_win_rate", "rolling_5y_win_rate"} and isinstance(value, float):
                 values.append(f"{value:.2%}")
             else:
                 values.append(format_float(value, 2))
@@ -106,7 +108,7 @@ def build_markdown(summary: pd.DataFrame, latest_bar_date: str, generated_at: st
             [
                 f"### {int(row['rank'])}. {row['strategy']}",
                 "",
-                f"{note}{risk}。年化收益 `{row['cagr_pct']:.2f}%`，最大回撤 `{row['max_drawdown_pct']:.2f}%`，滚动 5 年胜率 `{row['rolling_5y_win_rate']:.2%}`，综合分 `{row['score']:.2f}`。",
+                f"{note}{risk}。年化收益 `{row['cagr_pct']:.2f}%`，最大回撤 `{row['max_drawdown_pct']:.2f}%`，滚动 1/3/5 年胜率 `{row['rolling_1y_win_rate']:.2%}` / `{row['rolling_3y_win_rate']:.2%}` / `{row['rolling_5y_win_rate']:.2%}`，综合分 `{row['score']:.2f}`。",
                 "",
             ]
         )
@@ -149,4 +151,3 @@ def build_json_payload(
 def write_json(payload: dict[str, Any], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-

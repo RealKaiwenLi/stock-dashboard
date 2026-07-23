@@ -61,6 +61,8 @@ def results_table_property_order(config: StrategyValidationConfig) -> list[dict]
         ("风险标记", 110),
         ("超额年化%", 120),
         (f"回撤/{config.symbols.signal}", 120),
+        ("滚动1年胜率", 140),
+        ("滚动3年胜率", 140),
         ("滚动5年胜率", 140),
         (f"定投领先{config.symbols.signal}%", 150),
         ("文本", 360),
@@ -232,6 +234,8 @@ def create_weekly_results_database(
             },
             "超额年化%": {"number": {"format": "number"}},
             f"回撤/{config.symbols.signal}": {"number": {"format": "number"}},
+            "滚动1年胜率": {"number": {"format": "number"}},
+            "滚动3年胜率": {"number": {"format": "number"}},
             "滚动5年胜率": {"number": {"format": "number"}},
             f"定投领先{config.symbols.signal}%": {"number": {"format": "number"}},
             "文本": {"rich_text": {}},
@@ -249,7 +253,7 @@ def row_short_note(row: pd.Series) -> str:
     return (
         f"{note}{risk}。年化 {row['cagr_pct']:.2f}%，"
         f"最大回撤 {row['max_drawdown_pct']:.2f}%，"
-        f"滚动5年胜率 {row['rolling_5y_win_rate']:.2%}，"
+        f"滚动1/3/5年胜率 {row['rolling_1y_win_rate']:.2%} / {row['rolling_3y_win_rate']:.2%} / {row['rolling_5y_win_rate']:.2%}，"
         f"综合分 {row['score']:.2f}。"
     )
 
@@ -282,6 +286,8 @@ def row_detail_children(row: pd.Series, config: StrategyValidationConfig) -> lis
         bulleted_block(f"年化收益：{row['cagr_pct']:.2f}%；超额年化：{row['excess_cagr_pct']:.2f}%"),
         bulleted_block(f"最大回撤：{row['max_drawdown_pct']:.2f}%；回撤/{config.symbols.signal}：{row['max_drawdown_ratio_vs_signal']:.2f}"),
         bulleted_block(f"夏普比率：{row['sharpe']:.2f}"),
+        bulleted_block(f"滚动 1 年胜率：{row['rolling_1y_win_rate']:.2%}"),
+        bulleted_block(f"滚动 3 年胜率：{row['rolling_3y_win_rate']:.2%}"),
         bulleted_block(f"滚动 5 年胜率：{row['rolling_5y_win_rate']:.2%}"),
         bulleted_block(f"定投领先 {config.symbols.signal}：{row['dca_vs_signal_pct']:.2f}%"),
         bulleted_block(f"年均换仓：{row['switches_per_year']:.2f}"),
@@ -301,6 +307,8 @@ def result_row_properties(row: pd.Series, config: StrategyValidationConfig) -> d
         "综合分": {"number": float(row["score"])},
         "超额年化%": {"number": float(row["excess_cagr_pct"])},
         f"回撤/{config.symbols.signal}": {"number": float(row["max_drawdown_ratio_vs_signal"])},
+        "滚动1年胜率": {"number": float(row["rolling_1y_win_rate"] * 100.0)},
+        "滚动3年胜率": {"number": float(row["rolling_3y_win_rate"] * 100.0)},
         "滚动5年胜率": {"number": float(row["rolling_5y_win_rate"] * 100.0)},
         f"定投领先{config.symbols.signal}%": {"number": float(row["dca_vs_signal_pct"])},
         "文本": {"rich_text": [{"type": "text", "text": {"content": row_short_note(row)}}]},

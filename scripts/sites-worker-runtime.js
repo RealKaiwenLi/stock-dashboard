@@ -335,6 +335,8 @@ const parseWeeklyResultRow = (page) => {
     maxDrawdownPct: notionPropertyText(properties['最大回撤%']),
     maxDrawdownRatio: notionPropertyText(findPropertyByPrefix(properties, '回撤/')),
     sharpe: notionPropertyText(properties['夏普比率']),
+    rolling1yWinRate: notionPropertyText(properties['滚动1年胜率']),
+    rolling3yWinRate: notionPropertyText(properties['滚动3年胜率']),
     rolling5yWinRate: notionPropertyText(properties['滚动5年胜率']),
     dcaVsSignalPct: notionPropertyText(findPropertyByPrefix(properties, '定投领先')),
     switchesPerYear: notionPropertyText(properties['年均换仓']),
