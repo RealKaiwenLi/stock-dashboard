@@ -4,19 +4,27 @@ const columns = [
   ['rank', 'rank'],
   ['strategy', 'strategy'],
   ['score', 'score'],
+  ['riskFlag', 'riskFlag'],
   ['cagrPct', 'cagr'],
+  ['excessCagrPct', 'excessCagr'],
   ['maxDrawdownPct', 'maxDrawdown'],
+  ['maxDrawdownRatio', 'drawdownRatio'],
   ['sharpe', 'sharpe'],
   ['rolling5yWinRate', 'winRate'],
+  ['dcaVsSignalPct', 'dcaLead'],
   ['switchesPerYear', 'switches'],
+  ['note', 'note'],
 ]
 
-const numericColumns = new Set(columns.map(([key]) => key).filter((key) => key !== 'strategy'))
+const numericColumns = new Set([
+  'rank', 'score', 'cagrPct', 'excessCagrPct', 'maxDrawdownPct',
+  'maxDrawdownRatio', 'sharpe', 'rolling5yWinRate', 'dcaVsSignalPct', 'switchesPerYear',
+])
 
 function formatMetric(key, value) {
   if (value == null) return '-'
   if (key === 'rolling5yWinRate') return `${Number(value).toFixed(1)}%`
-  if (['cagrPct', 'maxDrawdownPct'].includes(key)) return `${Number(value).toFixed(2)}%`
+  if (['cagrPct', 'excessCagrPct', 'maxDrawdownPct', 'dcaVsSignalPct'].includes(key)) return `${Number(value).toFixed(2)}%`
   if (key === 'rank') return value
   return typeof value === 'number' ? value.toFixed(2) : value
 }
@@ -69,7 +77,7 @@ export function WeeklyBacktestWidget({ copy, data, error, loading, onRetry }) {
           <div className="table-scroll">
             <table className="backtest-table weekly-backtest-table">
               <thead><tr>{columns.map(([key, label]) => <th key={key}><button className="table-sort-button" type="button" onClick={() => changeSort(key)}>{copy.columns[label]} {sort.key === key ? (sort.direction === 'asc' ? '↑' : '↓') : ''}</button></th>)}</tr></thead>
-              <tbody>{rows.map((row) => <tr key={`${selected.reportDate}-${row.rank}-${row.strategy}`}>{columns.map(([key]) => <td key={key}>{formatMetric(key, row[key])}</td>)}</tr>)}</tbody>
+              <tbody>{rows.map((row) => <tr key={`${selected.reportDate}-${row.rank}-${row.strategy}`}>{columns.map(([key]) => <td className={key === 'note' ? 'weekly-note-cell' : undefined} key={key}>{formatMetric(key, row[key])}</td>)}</tr>)}</tbody>
             </table>
           </div>
           {selected.notionUrl ? <a className="weekly-notion-link" href={selected.notionUrl} target="_blank" rel="noreferrer">{copy.openNotion}</a> : null}

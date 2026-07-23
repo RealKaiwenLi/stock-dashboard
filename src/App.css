@@ -229,6 +229,39 @@
 
 .weekly-notion-link { display: inline-block; margin-top: 14px; }
 
+.weekly-backtest-table th:first-child,
+.weekly-backtest-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.weekly-backtest-table th:first-child,
+.weekly-backtest-table th:nth-child(2) {
+  z-index: 3;
+}
+
+.weekly-backtest-table th:nth-child(2),
+.weekly-backtest-table td:nth-child(2) {
+  position: sticky;
+  left: 52px;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.weekly-backtest-table th {
+  top: 0;
+  z-index: 2;
+}
+
+.weekly-backtest-table .weekly-note-cell {
+  min-width: 360px;
+  max-width: 520px;
+  white-space: normal;
+  line-height: 1.45;
+}
+
 .section-heading-row {
   display: flex;
   align-items: flex-start;
