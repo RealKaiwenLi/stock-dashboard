@@ -39,3 +39,15 @@ GET /api/daily-recommendations?from=YYYY-MM-DD&to=YYYY-MM-DD
 ```
 
 Reads daily Nasdaq guide recommendations from Notion and returns frontend-friendly calendar data. Requires `NOTION_TOKEN` and `NOTION_DATABASE_ID` in the backend environment. The frontend never calls Notion directly. Responses are cached in memory for 15 minutes per date range to keep calendar navigation responsive and reduce Notion API calls.
+# Backtest strategy configuration v2
+
+`POST /api/backtests` accepts legacy strategies and versioned strategy configurations. A missing
+`postExitReentry` object, or one with `enabled: false`, preserves the legacy execution path.
+Active policies use `schemaVersion: 1`, an aligned-trading-day cooldown, `ignore` or
+`retain_latest` signal handling, and one of `signal_still_valid`, `revalidate_entry`, or
+`rule_group` release validation.
+
+Successful strategy results add `status`, structured `events`, explicit `actualHolding` and
+`nextTarget`, deferred/expired/rejected counts, and a `latestSignal.postExitReentry` runtime
+snapshot. Existing success fields remain available. Invalid strategy candidates return
+`status: "error"` with `{code, path, message}` while other candidates continue.

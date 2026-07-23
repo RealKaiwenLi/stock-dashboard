@@ -1,3 +1,5 @@
+import { normalizeStrategyConfig } from './backtestStrategyConfig'
+
 export const STRATEGY_FAVORITES_STORAGE_KEY = 'stock-dashboard.strategyFavorites.v1'
 export const MAX_STRATEGY_FAVORITES = 30
 
@@ -78,6 +80,7 @@ function normalizeFavorite(favorite) {
   const strategy = normalizeStrategyTemplate(favorite?.strategy)
   if (!strategy) return null
   return {
+    version: 2,
     id: String(favorite.id || `favorite-${favorite.fingerprint || Date.now()}`),
     name: String(favorite.name || strategy.name),
     strategy,
@@ -89,7 +92,7 @@ function normalizeFavorite(favorite) {
 function normalizeStrategyTemplate(strategy) {
   if (!strategy) return null
   const name = String(strategy.name || 'Saved Strategy').trim() || 'Saved Strategy'
-  return {
+  return normalizeStrategyConfig({
     name,
     signalAsset: normalizeTicker(strategy.signalAsset),
     riskAsset: normalizeTicker(strategy.riskAsset),
@@ -97,7 +100,8 @@ function normalizeStrategyTemplate(strategy) {
     entry: clone(strategy.entry),
     exit: clone(strategy.exit),
     riskFilter: clone(strategy.riskFilter),
-  }
+    postExitReentry: clone(strategy.postExitReentry),
+  })
 }
 
 function normalizeTicker(value) {

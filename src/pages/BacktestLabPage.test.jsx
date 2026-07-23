@@ -170,6 +170,72 @@ describe('BacktestLabPage', () => {
     })
   })
 
+  it('configures a generic post-exit re-entry policy and blocks invalid active fields', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => backtestResult }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderBacktest()
+
+    expect(screen.getByText('Post-exit re-entry: off')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Enable post-exit re-entry restrictions'))
+    const cooldownInput = screen.getByLabelText('Cooldown trading days')
+    await user.clear(cooldownInput)
+    await user.type(cooldownInput, '0')
+    await user.click(screen.getByRole('button', { name: 'Run Backtest' }))
+    expect(await screen.findByText('Enter an integer from 1–252 trading days')).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await user.clear(cooldownInput)
+    await user.type(cooldownInput, '3')
+    await user.selectOptions(screen.getByLabelText('Signals during cooldown'), 'retain_latest')
+    await user.selectOptions(screen.getByLabelText('Release validation'), 'signal_still_valid')
+    await user.click(screen.getByRole('button', { name: 'Run Backtest' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(request.strategies[0].postExitReentry).toMatchObject({
+      enabled: true,
+      cooldownTradingDays: 3,
+      signalHandling: 'retain_latest',
+      releaseValidation: { mode: 'signal_still_valid' },
+    })
+  })
+
+  it('keeps valid candidates running and renders an invalid candidate error row', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => backtestResult }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderBacktest()
+    await user.click(screen.getByRole('button', { name: 'Add Strategy' }))
+    const toggles = screen.getAllByLabelText('Enable post-exit re-entry restrictions')
+    await user.click(toggles[1])
+    const cooldowns = screen.getAllByLabelText('Cooldown trading days')
+    await user.clear(cooldowns[0])
+    await user.type(cooldowns[0], '0')
+    await user.click(screen.getByRole('button', { name: 'Run Backtest' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(request.strategies).toHaveLength(1)
+    expect(await screen.findByRole('cell', { name: 'Strategy 2' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: /1–252/ })).toBeInTheDocument()
+  })
+
+  it('places the policy after exit rules and exposes MACD release parameters with row errors', async () => {
+    const user = userEvent.setup()
+    renderBacktest()
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)
+    expect(headings.indexOf('Post-exit Re-entry Policy')).toBeGreaterThan(headings.indexOf('Exit Rule'))
+    expect(headings.indexOf('Post-exit Re-entry Policy')).toBeLessThan(headings.indexOf('Risk Filter'))
+    await user.click(screen.getByLabelText('Enable post-exit re-entry restrictions'))
+    await user.selectOptions(screen.getByLabelText('Signals during cooldown'), 'retain_latest')
+    await user.selectOptions(screen.getByLabelText('Release validation'), 'rule_group')
+    const releaseFast = screen.getAllByLabelText('MACD Fast').at(-1)
+    expect(releaseFast).toHaveValue('12')
+    await user.clear(releaseFast)
+    await user.type(releaseFast, '0')
+    await user.click(screen.getByRole('button', { name: 'Run Backtest' }))
+    expect(await screen.findByText('Enter an integer from 1–252 trading days')).toBeInTheDocument()
+  })
+
   it('renders Chinese copy when the shell language is Chinese', () => {
     renderBacktest('zh')
 
@@ -179,6 +245,20 @@ describe('BacktestLabPage', () => {
     expect(screen.getAllByLabelText('规则类型')[0]).toHaveDisplayValue('MACD 金叉')
     expect(screen.getByDisplayValue('Hist > 0')).toBeInTheDocument()
     expect(screen.queryByLabelText('退出附加条件：Hist > 0')).not.toBeInTheDocument()
+    expect(screen.getByText('退出后再入场限制：关闭')).toBeInTheDocument()
+  })
+
+  it('makes the five-day retained-signal setting discoverable in Chinese', async () => {
+    const user = userEvent.setup()
+    renderBacktest('zh')
+
+    await user.click(screen.getByLabelText('启用退出后再入场限制'))
+    expect(screen.getByText(/选择“暂存最新信号”/)).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('冷却期间入场信号'), 'retain_latest')
+
+    expect(screen.getByLabelText('新入场信号保留交易日数')).toHaveValue('5')
+    expect(screen.getByText(/信号出现当日算第 1 天/)).toBeInTheDocument()
+    expect(screen.getByText(/冷却期间暂存最新入场信号，并保留 5 个交易日/)).toBeInTheDocument()
   })
 
   it('saves a strategy as a local favorite and adds it back with one click', async () => {

@@ -1363,6 +1363,7 @@
 }
 
 .backtest-controls input,
+.backtest-controls select,
 .strategy-editor input,
 .strategy-editor select,
 .backtest-detail select {
@@ -1385,6 +1386,47 @@
 
 .backtest-controls .backtest-form-grid {
   grid-template-columns: 1fr;
+}
+
+.experiment-storage-actions {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.experiment-storage-actions button {
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 8px;
+  background: var(--surface);
+  color: color-mix(in srgb, var(--accent) 72%, var(--text-strong));
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.experiment-storage-actions .experiment-save-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.experiment-storage-actions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.experiment-storage-actions .experiment-save-button:hover {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text-strong));
+}
+
+.experiment-storage-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .primary-action,
@@ -2033,5 +2075,42 @@
 
   .component-score {
     text-align: left;
+  }
+}
+.post-exit-reentry {
+  border: 1px solid rgba(76, 120, 168, 0.3);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.post-exit-summary {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-soft));
+  line-height: 1.55;
+}
+
+.field-helper {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.field-error {
+  color: #c33;
+  display: block;
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+}
+
+.release-rule-builder {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .experiment-storage-actions {
+    grid-template-columns: 1fr;
   }
 }

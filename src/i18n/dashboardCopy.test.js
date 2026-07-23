@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getComponentCopy,
+  getBacktestCopy,
   getDashboardCopy,
   getIndexName,
   getLocalizedStatusLabel,
@@ -18,6 +19,15 @@ describe('dashboardCopy', () => {
     expect(zh.explanationTrigger).toBe('如何计算？')
     expect(en.explanationTrigger).toBe('How is this calculated?')
     expect(en.disclaimer).toBe('This page summarizes market conditions and is not financial advice.')
+  })
+
+  it('provides localized post-exit re-entry guidance', () => {
+    const zh = getBacktestCopy('zh').strategy
+    const en = getBacktestCopy('en').strategy
+
+    expect(zh.retention).toBe('新入场信号保留交易日数')
+    expect(zh.postExitSummary.retain(10, 5, '信号仍有效即可')).toContain('保留 5 个交易日')
+    expect(en.postExitSummary.retain(10, 5, 'signal remains valid')).toContain('retain the latest entry signal for 5 trading days')
   })
 
   it('localizes status labels and falls back to the given label', () => {

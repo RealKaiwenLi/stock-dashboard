@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 1,
+  "rows": [
+    {"date":"2024-01-02","SIG_open":100,"SIG_close":100,"RISK_open":100,"RISK_close":100},
+    {"date":"2024-01-03","SIG_open":101,"SIG_close":101,"RISK_open":100,"RISK_close":100},
+    {"date":"2024-01-04","SIG_open":102,"SIG_close":102,"RISK_open":100,"RISK_close":100},
+    {"date":"2024-01-05","SIG_open":103,"SIG_close":103,"RISK_open":100,"RISK_close":100},
+    {"date":"2024-01-08","SIG_open":104,"SIG_close":104,"RISK_open":100,"RISK_close":100},
+    {"date":"2024-01-09","SIG_open":105,"SIG_close":105,"RISK_open":100,"RISK_close":100},
+    {"date":"2024-01-10","SIG_open":106,"SIG_close":106,"RISK_open":100,"RISK_close":100},
+    {"date":"2024-01-11","SIG_open":107,"SIG_close":107,"RISK_open":100,"RISK_close":100}
+  ],
+  "strategy": {
+    "id":"fixture","name":"Fixture","signalAsset":"SIG","riskAsset":"RISK","fallbackAsset":"CASH",
+    "entry":{"logic":"and","rules":[{"type":"macd_cross","fast":2,"slow":3,"signal":2}]},
+    "exit":{"logic":"and","rules":[{"type":"ma_break","maType":"ema","window":2}]},
+    "riskFilter":{"cape":{"enabled":false,"max":30}}
+  },
+  "cases": [
+    {
+      "name":"disabled_baseline",
+      "rowCount":8,
+      "policy":null,
+      "entrySignals":[false,true,false,false,false,false,false,false],
+      "exitSignals":[false,false,false,true,false,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-05","releaseDate":null,"executionDate":"2024-01-08","from":"RISK","to":"CASH"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-05","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-08","eventType":"Exit Executed"}
+        ],
+        "equity":[1,1,1,1,1,1,1,1],
+        "counts":{"deferredEntries":0,"expiredSignals":0,"rejectedSignals":0},
+        "latest":{"enabled":false,"state":"inactive","actualHolding":"CASH","nextTarget":"CASH","releaseValidationPassed":null,"hasPendingOrder":false}
+      }
+    },
+    {
+      "name":"cooldown_ignore_us9_us10",
+      "rowCount":8,
+      "policy":{"enabled":true,"cooldownTradingDays":2,"signalHandling":"ignore"},
+      "entrySignals":[false,true,false,false,true,false,false,false],
+      "exitSignals":[false,false,true,false,false,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},
+          {"eventDate":"2024-01-08","eventType":"Entry Ignored"}
+        ],
+        "equity":[1,1,1,1,1,1,1,1],
+        "counts":{"deferredEntries":0,"expiredSignals":0,"rejectedSignals":0},
+        "latest":{"enabled":true,"state":"inactive","actualHolding":"CASH","nextTarget":"CASH","releaseValidationPassed":null,"hasPendingOrder":false}
+      }
+    },
+    {
+      "name":"retain_release_us11_us13_us14",
+      "rowCount":8,
+      "policy":{"enabled":true,"cooldownTradingDays":2,"signalHandling":"retain_latest","retentionTradingDays":3,"releaseValidation":{"mode":"signal_still_valid"}},
+      "entrySignals":[false,true,false,false,true,false,false,false],
+      "exitSignals":[false,false,true,false,false,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"},
+          {"signalDate":"2024-01-08","releaseDate":"2024-01-09","executionDate":"2024-01-10","from":"CASH","to":"RISK"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},
+          {"eventDate":"2024-01-08","eventType":"Signal Retained"},
+          {"eventDate":"2024-01-09","eventType":"Release Passed"},
+          {"eventDate":"2024-01-09","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-10","eventType":"Entry Executed"}
+        ],
+        "equity":[1,1,1,1,1,1,1,1],
+        "counts":{"deferredEntries":1,"expiredSignals":0,"rejectedSignals":0},
+        "latest":{"enabled":true,"state":"inactive","actualHolding":"RISK","nextTarget":"RISK","releaseValidationPassed":true,"hasPendingOrder":false}
+      }
+    },
+    {
+      "name":"replace_then_expire_us11_us12",
+      "rowCount":8,
+      "policy":{"enabled":true,"cooldownTradingDays":4,"signalHandling":"retain_latest","retentionTradingDays":2,"releaseValidation":{"mode":"signal_still_valid"}},
+      "entrySignals":[false,true,false,false,true,true,false,false],
+      "exitSignals":[false,false,true,false,false,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},
+          {"eventDate":"2024-01-08","eventType":"Signal Retained"},
+          {"eventDate":"2024-01-09","eventType":"Signal Replaced"},
+          {"eventDate":"2024-01-11","eventType":"Signal Expired"}
+        ],
+        "equity":[1,1,1,1,1,1,1,1],
+        "counts":{"deferredEntries":2,"expiredSignals":1,"rejectedSignals":0},
+        "latest":{"enabled":true,"state":"inactive","actualHolding":"CASH","nextTarget":"CASH","releaseValidationPassed":null,"hasPendingOrder":false}
+      }
+    },
+    {
+      "name":"revalidate_rejected_us13",
+      "rowCount":8,
+      "policy":{"enabled":true,"cooldownTradingDays":2,"signalHandling":"retain_latest","retentionTradingDays":3,"releaseValidation":{"mode":"revalidate_entry"}},
+      "entrySignals":[false,true,false,false,true,false,false,false],
+      "exitSignals":[false,false,true,false,false,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},
+          {"eventDate":"2024-01-08","eventType":"Signal Retained"},
+          {"eventDate":"2024-01-09","eventType":"Release Rejected"}
+        ],
+        "equity":[1,1,1,1,1,1,1,1],
+        "counts":{"deferredEntries":1,"expiredSignals":0,"rejectedSignals":1},
+        "latest":{"enabled":true,"state":"inactive","actualHolding":"CASH","nextTarget":"CASH","releaseValidationPassed":false,"hasPendingOrder":false}
+      }
+    },
+    {
+      "name":"tail_order_pending_us14",
+      "rowCount":6,
+      "policy":{"enabled":true,"cooldownTradingDays":2,"signalHandling":"retain_latest","retentionTradingDays":3,"releaseValidation":{"mode":"signal_still_valid"}},
+      "entrySignals":[false,true,false,false,true,false],
+      "exitSignals":[false,false,true,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},
+          {"eventDate":"2024-01-08","eventType":"Signal Retained"},
+          {"eventDate":"2024-01-09","eventType":"Release Passed"},
+          {"eventDate":"2024-01-09","eventType":"Order Scheduled"}
+        ],
+        "equity":[1,1,1,1,1,1],
+        "counts":{"deferredEntries":1,"expiredSignals":0,"rejectedSignals":0},
+        "latest":{"enabled":true,"state":"order_pending","actualHolding":"CASH","nextTarget":"RISK","releaseValidationPassed":true,"hasPendingOrder":true}
+      }
+    },
+    {
+      "name":"rule_group_pass_and_us13",
+      "rowCount":8,
+      "policy":{"enabled":true,"cooldownTradingDays":2,"signalHandling":"retain_latest","retentionTradingDays":3,"releaseValidation":{"mode":"rule_group","group":{"logic":"and","rules":[{"assetRole":"signal","type":"close_above_ma","maType":"sma","window":2}]}}},
+      "entrySignals":[false,true,false,false,true,false,false,false],
+      "exitSignals":[false,false,true,false,false,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"},
+          {"signalDate":"2024-01-08","releaseDate":"2024-01-09","executionDate":"2024-01-10","from":"CASH","to":"RISK"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},{"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},{"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},{"eventDate":"2024-01-08","eventType":"Signal Retained"},
+          {"eventDate":"2024-01-09","eventType":"Release Passed"},{"eventDate":"2024-01-09","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-10","eventType":"Entry Executed"}
+        ],
+        "equity":[1,1,1,1,1,1,1,1],
+        "counts":{"deferredEntries":1,"expiredSignals":0,"rejectedSignals":0},
+        "latest":{"enabled":true,"state":"inactive","actualHolding":"RISK","nextTarget":"RISK","releaseValidationPassed":true,"hasPendingOrder":false,"releaseConditionCount":1},
+        "releaseSnapshot":[{"label":"close_above_ma","value":{"close":105,"average":104.5},"passed":true}]
+      }
+    },
+    {
+      "name":"rule_group_reject_or_us13",
+      "rowCount":8,
+      "policy":{"enabled":true,"cooldownTradingDays":2,"signalHandling":"retain_latest","retentionTradingDays":3,"releaseValidation":{"mode":"rule_group","group":{"logic":"or","rules":[{"assetRole":"signal","type":"close_below_ma","maType":"sma","window":2}]}}},
+      "entrySignals":[false,true,false,false,true,false,false,false],
+      "exitSignals":[false,false,true,false,false,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},{"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},{"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},{"eventDate":"2024-01-08","eventType":"Signal Retained"},
+          {"eventDate":"2024-01-09","eventType":"Release Rejected"}
+        ],
+        "equity":[1,1,1,1,1,1,1,1],
+        "counts":{"deferredEntries":1,"expiredSignals":0,"rejectedSignals":1},
+        "latest":{"enabled":true,"state":"inactive","actualHolding":"CASH","nextTarget":"CASH","releaseValidationPassed":false,"hasPendingOrder":false,"releaseConditionCount":1},
+        "releaseSnapshot":[{"label":"close_below_ma","value":{"close":105,"average":104.5},"passed":false}]
+      }
+    },
+    {
+      "name":"release_and_same_day_entry_deduplicated",
+      "rowCount":8,
+      "policy":{"enabled":true,"cooldownTradingDays":2,"signalHandling":"retain_latest","retentionTradingDays":3,"releaseValidation":{"mode":"signal_still_valid"}},
+      "entrySignals":[false,true,false,false,true,true,false,false],
+      "exitSignals":[false,false,true,false,false,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"},
+          {"signalDate":"2024-01-08","releaseDate":"2024-01-09","executionDate":"2024-01-10","from":"CASH","to":"RISK"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},{"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},{"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},{"eventDate":"2024-01-08","eventType":"Signal Retained"},
+          {"eventDate":"2024-01-09","eventType":"Release Passed"},{"eventDate":"2024-01-09","eventType":"Order Scheduled"},
+          {"eventDate":"2024-01-10","eventType":"Entry Executed"}
+        ],
+        "equity":[1,1,1,1,1,1,1,1],
+        "counts":{"deferredEntries":1,"expiredSignals":0,"rejectedSignals":0},
+        "latest":{"enabled":true,"state":"inactive","actualHolding":"RISK","nextTarget":"RISK","releaseValidationPassed":true,"hasPendingOrder":false},
+        "dualSourceSignalDates":["2024-01-08","2024-01-09"]
+      }
+    },
+    {
+      "name":"cooldown_and_retention_out_of_range",
+      "rowCount":6,
+      "policy":{"enabled":true,"cooldownTradingDays":10,"signalHandling":"retain_latest","retentionTradingDays":10,"releaseValidation":{"mode":"signal_still_valid"}},
+      "entrySignals":[false,true,false,false,true,false],
+      "exitSignals":[false,false,true,false,false,false],
+      "expected":{
+        "trades":[
+          {"signalDate":"2024-01-03","releaseDate":null,"executionDate":"2024-01-04","from":"CASH","to":"RISK"},
+          {"signalDate":"2024-01-04","releaseDate":null,"executionDate":"2024-01-05","from":"RISK","to":"CASH"}
+        ],
+        "events":[
+          {"eventDate":"2024-01-03","eventType":"Order Scheduled"},{"eventDate":"2024-01-04","eventType":"Entry Executed"},
+          {"eventDate":"2024-01-04","eventType":"Order Scheduled"},{"eventDate":"2024-01-05","eventType":"Exit Executed"},
+          {"eventDate":"2024-01-05","eventType":"Cooldown Started"},{"eventDate":"2024-01-08","eventType":"Signal Retained"}
+        ],
+        "equity":[1,1,1,1,1,1],
+        "counts":{"deferredEntries":1,"expiredSignals":0,"rejectedSignals":0},
+        "latest":{"enabled":true,"state":"pending_signal","actualHolding":"CASH","nextTarget":"CASH","releaseValidationPassed":null,"hasPendingOrder":false,"earliestReleaseOutOfRange":true,"deferredValidThroughOutOfRange":true}
+      }
+    }
+  ],
+  "invalidCases":[
+    {"name":"zero_cooldown","policy":{"enabled":true,"cooldownTradingDays":0,"signalHandling":"ignore"},"path":"postExitReentry.cooldownTradingDays"},
+    {"name":"empty_release_group","policy":{"enabled":true,"cooldownTradingDays":2,"signalHandling":"retain_latest","retentionTradingDays":2,"releaseValidation":{"mode":"rule_group","group":{"logic":"and","rules":[]}}},"path":"postExitReentry.releaseValidation.group.rules"}
+  ]
+}

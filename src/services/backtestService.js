@@ -1,3 +1,5 @@
+import { normalizeStrategyConfig } from './backtestStrategyConfig'
+
 function todayIsoDate() {
   const today = new Date()
   const timezoneOffsetMs = today.getTimezoneOffset() * 60 * 1000
@@ -11,6 +13,7 @@ export const DEFAULT_BACKTEST_EXPERIMENT = {
   benchmark: 'QQQ',
   strategies: [
     {
+      configVersion: 2,
       id: 'ema15-hist',
       name: 'EMA15 + Hist',
       signalAsset: 'QQQ',
@@ -30,23 +33,38 @@ export const DEFAULT_BACKTEST_EXPERIMENT = {
       riskFilter: {
         cape: { enabled: false, max: 30 },
       },
+      postExitReentry: {
+        schemaVersion: 1,
+        enabled: false,
+        cooldownTradingDays: 10,
+        signalHandling: 'ignore',
+        retentionTradingDays: 5,
+        releaseValidation: {
+          mode: 'revalidate_entry',
+          group: { logic: 'and', rules: [{ assetRole: 'signal', type: 'macd_above_signal', fast: 12, slow: 26, signal: 9 }] },
+        },
+      },
     },
   ],
 }
 
 export function createStrategy(index = 1, seed = DEFAULT_BACKTEST_EXPERIMENT.strategies[0]) {
   return {
-    ...JSON.parse(JSON.stringify(seed)),
+    ...normalizeStrategyConfig(seed),
     id: `strategy-${Date.now()}-${index}`,
     name: `Strategy ${index}`,
   }
 }
 
 export async function runBacktestExperiment(experiment, { fetcher = fetch } = {}) {
+  const normalizedExperiment = {
+    ...experiment,
+    strategies: (experiment.strategies || []).map(normalizeStrategyConfig),
+  }
   const response = await fetcher('/api/backtests', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(experiment),
+    body: JSON.stringify(normalizedExperiment),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {

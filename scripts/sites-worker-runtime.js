@@ -773,25 +773,124 @@ const explainLatestSignal = (signalAsset, riskAsset, fallbackAsset, holding, pen
   return `The strategy remains in ${holding || fallbackAsset}; no entry signal is active on the latest completed bar.`
 }
 
-const runStrategy = (rows, strategy, index, benchmarkSummary) => {
+export const normalizePostExitReentry = (strategy) => {
+  const source = strategy.postExitReentry
+  if (!source?.enabled) return { schemaVersion: 1, enabled: false }
+  const integer = (value, path) => {
+    if (!Number.isInteger(value) || value < 1 || value > 252) {
+      const error = new Error('Enter an integer from 1 to 252 trading days')
+      Object.assign(error, { code: 'INVALID_TRADING_DAYS', path })
+      throw error
+    }
+  }
+  integer(source.cooldownTradingDays, 'postExitReentry.cooldownTradingDays')
+  if (!['ignore', 'retain_latest'].includes(source.signalHandling)) {
+    const error = new Error('Signal handling must be ignore or retain_latest')
+    Object.assign(error, { code: 'INVALID_SIGNAL_HANDLING', path: 'postExitReentry.signalHandling' })
+    throw error
+  }
+  if (source.signalHandling === 'retain_latest') integer(source.retentionTradingDays, 'postExitReentry.retentionTradingDays')
+  const releaseValidation = source.releaseValidation ?? { mode: 'revalidate_entry' }
+  if (source.signalHandling === 'retain_latest' && !['signal_still_valid', 'revalidate_entry', 'rule_group'].includes(releaseValidation.mode)) {
+    const error = new Error('Unsupported release validation mode')
+    Object.assign(error, { code: 'INVALID_RELEASE_MODE', path: 'postExitReentry.releaseValidation.mode' })
+    throw error
+  }
+  if (source.signalHandling === 'retain_latest' && releaseValidation.mode === 'rule_group' && !releaseValidation.group?.rules?.length) {
+    const error = new Error('At least one release rule is required')
+    Object.assign(error, { code: 'EMPTY_RELEASE_RULES', path: 'postExitReentry.releaseValidation.group.rules' })
+    throw error
+  }
+  if (source.signalHandling === 'retain_latest' && releaseValidation.mode === 'rule_group') {
+    const allowedTypes = new Set(['macd_above_signal', 'macd_below_signal', 'hist_positive', 'hist_negative', 'close_above_ma', 'close_below_ma', 'close_above_prior_high', 'close_below_prior_low'])
+    releaseValidation.group.rules.forEach((rule, index) => {
+      const base = `postExitReentry.releaseValidation.group.rules[${index}]`
+      if (!['signal', 'risk', 'fallback'].includes(rule.assetRole)) {
+        throw Object.assign(new Error('Unsupported asset role'), { code: 'INVALID_ASSET_ROLE', path: `${base}.assetRole` })
+      }
+      if (rule.assetRole === 'fallback' && normalizeSymbol(strategy.fallbackAsset, 'QQQ') === 'CASH') {
+        throw Object.assign(new Error('CASH cannot be used by price rules'), { code: 'CASH_RULE_UNSUPPORTED', path: `${base}.assetRole` })
+      }
+      if (!allowedTypes.has(rule.type)) {
+        throw Object.assign(new Error('Unsupported release rule'), { code: 'INVALID_RELEASE_RULE', path: `${base}.type` })
+      }
+      const fields = rule.type.includes('_ma') || rule.type.includes('prior_') ? ['window'] : ['fast', 'slow', 'signal']
+      fields.forEach((field) => integer(rule[field], `${base}.${field}`))
+    })
+  }
+  return {
+    schemaVersion: 1, enabled: true,
+    cooldownTradingDays: source.cooldownTradingDays,
+    signalHandling: source.signalHandling,
+    retentionTradingDays: source.retentionTradingDays,
+    releaseValidation,
+  }
+}
+
+export const evaluateStateRule = (rows, strategy, rule, idx) => {
+  const asset = {
+    signal: normalizeSymbol(strategy.signalAsset, 'QQQ'),
+    risk: normalizeSymbol(strategy.riskAsset, 'QLD'),
+    fallback: normalizeSymbol(strategy.fallbackAsset, 'QQQ'),
+  }[rule.assetRole]
+  if (!asset || asset === 'CASH') throw Object.assign(new Error('Unsupported release asset role'), { code: 'INVALID_ASSET_ROLE' })
+  const close = rows.slice(0, idx + 1).map((row) => row[`${asset}_close`])
+  const current = close.at(-1)
+  let passed
+  let value
+  if (rule.type.startsWith('macd_') || rule.type.startsWith('hist_')) {
+    const data = computeMacd(close, Number(rule.fast), Number(rule.slow), Number(rule.signal))
+    const spread = data.macd.at(-1) - data.signal.at(-1)
+    value = rule.type.startsWith('hist_') ? finite(data.hist.at(-1)) : finite(spread)
+    passed = rule.type === 'macd_above_signal' ? spread > 0
+      : rule.type === 'macd_below_signal' ? spread < 0
+        : rule.type === 'hist_positive' ? data.hist.at(-1) > 0 : data.hist.at(-1) < 0
+  } else if (rule.type === 'close_above_ma' || rule.type === 'close_below_ma') {
+    const average = movingAverage(close, Number(rule.window), rule.maType ?? 'ema').at(-1)
+    value = { close: finite(current), average: finite(average) }
+    passed = rule.type === 'close_above_ma' ? current > average : current < average
+  } else {
+    const prior = close.slice(Math.max(0, close.length - 1 - Number(rule.window)), -1)
+    const threshold = rule.type === 'close_above_prior_high' ? Math.max(...prior) : Math.min(...prior)
+    value = { close: finite(current), threshold: finite(threshold) }
+    passed = rule.type === 'close_above_prior_high' ? current > threshold : current < threshold
+  }
+  return { label: rule.type, value, passed: Boolean(passed) }
+}
+
+export const runStrategy = (rows, strategy, index, benchmarkSummary, signalOverrides = null) => {
   const name = (strategy.name || `Strategy ${index + 1}`).trim()
   const signalAsset = normalizeSymbol(strategy.signalAsset, 'QQQ')
   const riskAsset = normalizeSymbol(strategy.riskAsset, 'QLD')
   const fallbackAsset = normalizeSymbol(strategy.fallbackAsset, signalAsset)
   const signalClose = rows.map((row) => row[`${signalAsset}_close`])
-  const entrySignal = buildRuleGroupSignal(signalClose, strategy, 'entry').signal
-  const { signal: exitSignal, diagnostics } = buildRuleGroupSignal(signalClose, strategy, 'exit')
+  const entrySignal = signalOverrides?.entry ?? buildRuleGroupSignal(signalClose, strategy, 'entry').signal
+  const builtExit = buildRuleGroupSignal(signalClose, strategy, 'exit')
+  const exitSignal = signalOverrides?.exit ?? builtExit.signal
+  const { diagnostics } = builtExit
   const cape = capeFilterConfig(strategy)
   if (cape.enabled && !('cape' in rows[0])) throw new Error('CAPE data is required by the selected risk filter')
   const capePermitted = cape.enabled ? rows.map((row) => row.cape != null && row.cape <= cape.maximum) : rows.map(() => true)
 
   let held = fallbackAsset
+  const policy = normalizePostExitReentry(strategy)
   let pending = null
-  let pendingReason = null
   let baseRiskOn = false
   const values = [1]
   const trades = []
+  const events = []
   let switches = 0
+  let sequence = 0
+  let cooldownStartIndex = null
+  let cooldownStartDate = null
+  let deferred = null
+  let releaseSnapshot = null
+  const counters = { deferredEntries: 0, expiredSignals: 0, rejectedSignals: 0 }
+  const addEvent = (eventType, idx, fields = {}) => events.push({
+    sequence: ++sequence, eventDate: rows[idx].date, eventType, holding: held,
+    cooldownProgress: cooldownStartIndex == null ? null : { elapsed: idx - cooldownStartIndex, total: policy.cooldownTradingDays },
+    ...fields,
+  })
 
   for (let idx = 1; idx < rows.length; idx += 1) {
     let gross
@@ -799,40 +898,101 @@ const runStrategy = (rows, strategy, index, benchmarkSummary) => {
       gross = assetGross(rows, idx, held)
     } else {
       const old = held
-      gross = switchGross(rows, idx, old, pending)
-      held = pending
+      const order = pending
+      gross = switchGross(rows, idx, old, order.targetAsset)
+      held = order.targetAsset
       pending = null
       switches += 1
-      const reason = pendingReason || (held === riskAsset ? 'Entry signal' : 'Exit signal')
-      pendingReason = null
       trades.push({
-        signalDate: rows[idx - 1].date,
+        signalDate: order.sourceSignalDate, sourceSignalDate: order.sourceSignalDate,
+        releaseDate: order.releaseDate ?? null, orderScheduledDate: order.scheduledDate,
         executionDate: rows[idx].date,
+        executionPrice: held === 'CASH' ? null : finite(rows[idx][`${held}_open`]),
+        executionDeferred: false, deferred: Boolean(order.releaseDate),
         from: old,
         to: held,
-        reason,
+        reason: order.reason,
         equityAfterTrade: Number((values.at(-1) * gross).toFixed(4)),
       })
+      addEvent(held === riskAsset ? 'Entry Executed' : 'Exit Executed', idx, { signalDate: order.sourceSignalDate, releaseDate: order.releaseDate ?? null })
+      if (policy.enabled && order.kind === 'exit' && old === riskAsset && held === fallbackAsset) {
+        cooldownStartIndex = idx
+        cooldownStartDate = rows[idx].date
+        deferred = null
+        addEvent('Cooldown Started', idx, { signalDate: order.sourceSignalDate })
+      }
     }
 
     values.push(values.at(-1) * gross)
 
-    if (!baseRiskOn && entrySignal[idx]) baseRiskOn = true
-    else if (baseRiskOn && exitSignal[idx]) baseRiskOn = false
-
-    const target = baseRiskOn && capePermitted[idx] ? riskAsset : fallbackAsset
-    if (target !== held) {
-      pending = target
-      if (cape.enabled && baseRiskOn && target === fallbackAsset) pendingReason = 'CAPE risk filter'
-      else if (cape.enabled && baseRiskOn && target === riskAsset && !entrySignal[idx]) pendingReason = 'CAPE risk filter cleared'
-      else pendingReason = target === riskAsset ? 'Entry signal' : 'Exit signal'
+    if (baseRiskOn && exitSignal[idx] && held === riskAsset) {
+      baseRiskOn = false
+      pending = { targetAsset: fallbackAsset, kind: 'exit', reason: 'Exit signal', sourceSignalDate: rows[idx].date, scheduledDate: rows[idx].date, releaseDate: null }
+      addEvent('Order Scheduled', idx, { signalDate: rows[idx].date, releaseDate: null })
+    }
+    const cooling = policy.enabled && cooldownStartIndex != null && idx - cooldownStartIndex < policy.cooldownTradingDays
+    const releaseDay = policy.enabled && cooldownStartIndex != null && idx - cooldownStartIndex === policy.cooldownTradingDays
+    if (deferred && idx > deferred.validThroughIndex) {
+      addEvent('Signal Expired', idx, { signalDate: deferred.signalDate, validThrough: deferred.validThroughDate })
+      counters.expiredSignals += 1
+      deferred = null
+    }
+    if (releaseDay && deferred) {
+      const mode = policy.releaseValidation?.mode ?? 'revalidate_entry'
+      const snapshots = mode === 'rule_group'
+        ? policy.releaseValidation.group.rules.map((rule) => evaluateStateRule(rows, strategy, rule, idx))
+        : []
+      const logic = policy.releaseValidation.group?.logic ?? 'and'
+      const groupPassed = logic === 'or' ? snapshots.some((item) => item.passed) : snapshots.every((item) => item.passed)
+      const passed = mode === 'signal_still_valid' || (mode === 'revalidate_entry' && Boolean(entrySignal[idx])) || (mode === 'rule_group' && groupPassed)
+      releaseSnapshot = { mode, logic: mode === 'rule_group' ? logic.toUpperCase() : null, passed, conditions: snapshots }
+      if (passed) {
+        baseRiskOn = true
+        pending = { targetAsset: riskAsset, kind: 'entry', reason: 'Deferred entry signal', sourceSignalDate: deferred.signalDate, releaseDate: rows[idx].date, scheduledDate: rows[idx].date }
+        addEvent('Release Passed', idx, { signalDate: deferred.signalDate, releaseDate: rows[idx].date, ruleSnapshot: snapshots })
+        addEvent('Order Scheduled', idx, { signalDate: deferred.signalDate, releaseDate: rows[idx].date })
+      } else {
+        addEvent('Release Rejected', idx, { signalDate: deferred.signalDate, releaseDate: rows[idx].date, ruleSnapshot: snapshots })
+        counters.rejectedSignals += 1
+      }
+      deferred = null
+    }
+    if (entrySignal[idx] && pending?.releaseDate) {
+      pending.sourceSignalDates = [pending.sourceSignalDate, rows[idx].date]
+      events.at(-1).sourceSignalDates = pending.sourceSignalDates
+    } else if (entrySignal[idx] && !baseRiskOn) {
+      if (cooling) {
+        if (policy.signalHandling === 'ignore') addEvent('Entry Ignored', idx, { signalDate: rows[idx].date })
+        else {
+          const validThroughIndex = idx + policy.retentionTradingDays - 1
+          addEvent(deferred ? 'Signal Replaced' : 'Signal Retained', idx, { signalDate: rows[idx].date, validThrough: rows[validThroughIndex]?.date ?? null })
+          deferred = { signalDate: rows[idx].date, signalIndex: idx, validThroughIndex, validThroughDate: rows[validThroughIndex]?.date ?? null, validThroughOutOfRange: validThroughIndex >= rows.length, status: 'retained', ruleSnapshot: [] }
+          counters.deferredEntries += 1
+        }
+      } else {
+        baseRiskOn = true
+        const target = capePermitted[idx] ? riskAsset : fallbackAsset
+        if (target !== held) {
+          pending = { targetAsset: target, kind: target === riskAsset ? 'entry' : 'risk_filter', reason: target === riskAsset ? 'Entry signal' : 'CAPE risk filter', sourceSignalDate: rows[idx].date, scheduledDate: rows[idx].date, releaseDate: null }
+          addEvent('Order Scheduled', idx, { signalDate: rows[idx].date, releaseDate: null })
+        }
+      }
+    }
+    if (cape.enabled && baseRiskOn && !pending) {
+      const target = capePermitted[idx] ? riskAsset : fallbackAsset
+      if (target !== held) {
+        pending = { targetAsset: target, kind: 'risk_filter', reason: target === riskAsset ? 'CAPE risk filter cleared' : 'CAPE risk filter', sourceSignalDate: rows[idx].date, scheduledDate: rows[idx].date, releaseDate: null }
+        addEvent('Order Scheduled', idx, { signalDate: rows[idx].date, releaseDate: null })
+      }
     }
   }
 
   const summary = summarizeReturns(name, values, rows, switches)
   Object.assign(summary, {
     winVsBenchmark: (summary.cagrPct ?? -999) > (benchmarkSummary.cagrPct ?? -999),
-    currentHolding: pending || held,
+    currentHolding: pending?.targetAsset || held,
+    actualHolding: held,
+    ...counters,
     latestSignal: pending ? 'SWITCH' : 'HOLD',
     rank: null,
   })
@@ -849,12 +1009,29 @@ const runStrategy = (rows, strategy, index, benchmarkSummary) => {
     id: strategy.id || `strategy-${index + 1}`,
     summary,
     equityCurve: rows.map((row, itemIndex) => ({ date: row.date, value: Number(values[itemIndex].toFixed(4)) })),
-    trades: trades.slice(-100),
+    status: 'complete',
+    trades,
+    events,
     latestSignal: {
-      holding: pending || held,
+      holding: pending?.targetAsset || held,
+      actualHolding: held,
+      nextTarget: pending?.targetAsset || held,
       action: pending ? 'SWITCH' : 'HOLD',
       conditions: latestConditions,
-      explanation: explainLatestSignal(signalAsset, riskAsset, fallbackAsset, pending || held, pending, diagnostics),
+      explanation: explainLatestSignal(signalAsset, riskAsset, fallbackAsset, pending?.targetAsset || held, pending?.targetAsset, diagnostics),
+      postExitReentry: {
+        enabled: policy.enabled,
+        state: pending?.releaseDate ? 'order_pending' : deferred ? 'pending_signal' : (policy.enabled && cooldownStartIndex != null && rows.length - 1 - cooldownStartIndex < policy.cooldownTradingDays ? 'cooling_down' : 'inactive'),
+        cooldownStartDate,
+        cooldownElapsed: cooldownStartIndex == null ? null : rows.length - 1 - cooldownStartIndex,
+        cooldownTotal: policy.cooldownTradingDays,
+        earliestReleaseDate: cooldownStartIndex == null ? null : rows[cooldownStartIndex + policy.cooldownTradingDays]?.date ?? null,
+        earliestReleaseOutOfRange: cooldownStartIndex != null && cooldownStartIndex + policy.cooldownTradingDays >= rows.length,
+        deferredSignal: deferred,
+        releaseValidation: releaseSnapshot,
+        pendingOrder: pending,
+        nextAction: pending ? 'execute_next_available_open' : deferred ? 'wait_for_release' : 'follow_normal_rules',
+      },
     },
   }
 }
@@ -890,8 +1067,14 @@ const handleBacktests = async (request) => {
     if (rows.length < 80) return json({ error: 'Aligned data has fewer than 80 daily bars', dataAudit: audit }, 400)
 
     const benchmarkResult = buildBenchmark(rows, benchmark)
-    const results = strategies.map((strategy, itemIndex) => runStrategy(rows, strategy, itemIndex, benchmarkResult.summary))
-    const ranked = [...results].sort((a, b) => (b.summary.cagrPct ?? -999) - (a.summary.cagrPct ?? -999))
+    const results = strategies.map((strategy, itemIndex) => {
+      try {
+        return runStrategy(rows, strategy, itemIndex, benchmarkResult.summary)
+      } catch (error) {
+        return { id: strategy.id || `strategy-${itemIndex + 1}`, status: 'error', error: { code: error.code || 'INVALID_STRATEGY', path: error.path || '', message: error.message } }
+      }
+    })
+    const ranked = results.filter((item) => item.status !== 'error').sort((a, b) => (b.summary.cagrPct ?? -999) - (a.summary.cagrPct ?? -999))
     ranked.forEach((item, rankIndex) => {
       item.summary.rank = rankIndex + 1
     })

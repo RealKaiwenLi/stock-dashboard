@@ -4,6 +4,8 @@ import { createChart, LineSeries } from 'lightweight-charts'
 import { createStrategy, DEFAULT_BACKTEST_EXPERIMENT, runBacktestExperiment } from '../services/backtestService'
 import { createStrategyFingerprint, readStrategyFavorites, removeStrategyFavorite, saveStrategyFavorite } from '../services/strategyFavorites'
 import { getBacktestCopy } from '../i18n/dashboardCopy'
+import { normalizeStrategyConfig, summarizePostExitReentry, validateStrategyConfig } from '../services/backtestStrategyConfig'
+import { loadBacktestExperiment, readBacktestExperiments, saveBacktestExperiment } from '../services/backtestExperiments'
 
 const MAX_STRATEGIES = 5
 const BACKTEST_COLORS = ['#4C78A8', '#F58518', '#54A24B', '#E45756', '#72B7B2']
@@ -17,6 +19,8 @@ const RESULT_COLUMNS = [
   { key: 'maxDrawdown', defaultDirection: 'desc' },
   { key: 'sharpe', defaultDirection: 'desc' },
   { key: 'switches', defaultDirection: 'asc' },
+  { key: 'deferred', defaultDirection: 'asc' },
+  { key: 'expiredRejected', defaultDirection: 'asc' },
   { key: 'current', defaultDirection: 'asc' },
 ]
 
@@ -32,6 +36,7 @@ const defaultExitByType = {
   price_breakdown: { type: 'price_breakdown', window: 20 },
   hist_positive: { type: 'hist_positive', fast: 12, slow: 26, signal: 9 },
 }
+const RELEASE_RULES = ['macd_above_signal', 'macd_below_signal', 'hist_positive', 'hist_negative', 'close_above_ma', 'close_below_ma', 'close_above_prior_high', 'close_below_prior_low']
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -133,7 +138,7 @@ function EquityChart({ result, copy }) {
   const curves = useMemo(() => {
     if (!result) return []
     return [
-      ...(result.strategies || []).map((strategy, index) => ({
+      ...(result.strategies || []).filter((strategy) => strategy.status !== 'error').map((strategy, index) => ({
         name: strategy.summary.name,
         color: BACKTEST_COLORS[index],
         points: strategy.equityCurve,
@@ -361,6 +366,95 @@ function RuleGroupEditor({ group, rules, labels, defaultsByType, onChange, copy 
   )
 }
 
+function PostExitReentryEditor({ strategy, onChange, errors, copy }) {
+  const policy = normalizeStrategyConfig(strategy).postExitReentry
+  const patch = (next) => onChange({ ...policy, ...next })
+  const release = policy.releaseValidation
+  const rules = release.group?.rules || []
+  const fieldError = (path) => errors?.find((error) => error.path === path)
+  const updateRule = (index, next) => patch({ releaseValidation: { ...release, group: { ...release.group, rules: updateRuleAt(rules, index, () => next) } } })
+  return (
+    <div className="rule-section post-exit-reentry">
+      <h3>{copy.strategy.postExitTitle}</h3>
+      <label className="backtest-checkbox">
+        <input type="checkbox" checked={Boolean(policy.enabled)} onChange={(event) => patch({ enabled: event.target.checked })} />
+        {copy.strategy.postExitEnabled}
+      </label>
+      <p className="backtest-helper post-exit-summary">{summarizePostExitReentry({ ...strategy, postExitReentry: policy }, copy.strategy.postExitSummary)}</p>
+      {policy.enabled ? (
+        <div className="backtest-form-grid">
+          <label>{copy.strategy.cooldown}
+            <input aria-invalid={Boolean(fieldError('postExitReentry.cooldownTradingDays'))} value={policy.cooldownTradingDays} onChange={(event) => patch({ cooldownTradingDays: event.target.value })} />
+            {fieldError('postExitReentry.cooldownTradingDays') ? <span className="field-error">{copy.strategy.tradingDaysError}</span> : null}
+          </label>
+          <label>{copy.strategy.signalHandling}
+            <select aria-label={copy.strategy.signalHandling} value={policy.signalHandling} onChange={(event) => patch({ signalHandling: event.target.value })}>
+              <option value="ignore">{copy.strategy.ignoreSignals}</option>
+              <option value="retain_latest">{copy.strategy.retainLatest}</option>
+            </select>
+            {policy.signalHandling === 'ignore' ? <span className="field-helper">{copy.strategy.retentionHint}</span> : null}
+          </label>
+          {policy.signalHandling === 'retain_latest' ? (
+            <>
+              <label>{copy.strategy.retention}
+                <input aria-label={copy.strategy.retention} aria-invalid={Boolean(fieldError('postExitReentry.retentionTradingDays'))} value={policy.retentionTradingDays} onChange={(event) => patch({ retentionTradingDays: event.target.value })} />
+                <span className="field-helper">{copy.strategy.retentionHelper}</span>
+              </label>
+              <label>{copy.strategy.releaseMode}
+                <select value={release.mode} onChange={(event) => patch({ releaseValidation: { ...release, mode: event.target.value } })}>
+                  <option value="signal_still_valid">{copy.strategy.signalStillValid}</option>
+                  <option value="revalidate_entry">{copy.strategy.revalidateEntry}</option>
+                  <option value="rule_group">{copy.strategy.releaseRuleGroup}</option>
+                </select>
+              </label>
+            </>
+          ) : null}
+          {policy.signalHandling === 'retain_latest' && release.mode === 'rule_group' ? (
+            <div className="release-rule-builder">
+              {fieldError('postExitReentry.releaseValidation.group.rules') ? <span className="field-error">{copy.strategy.releaseRulesError}</span> : null}
+              <label>{copy.strategy.conditionLogic}
+                <select value={release.group.logic} onChange={(event) => patch({ releaseValidation: { ...release, group: { ...release.group, logic: event.target.value } } })}>
+                  <option value="and">AND</option><option value="or">OR</option>
+                </select>
+              </label>
+              {rules.map((rule, index) => (
+                <div className="rule-row" key={`${rule.type}-${index}`}>
+                  <select aria-label={`${copy.strategy.releaseAsset} ${index + 1}`} value={rule.assetRole} onChange={(event) => updateRule(index, { ...rule, assetRole: event.target.value })}>
+                    <option value="signal">Signal</option><option value="risk">Risk</option><option value="fallback">Fallback</option>
+                  </select>
+                  <select aria-label={`${copy.strategy.releaseRule} ${index + 1}`} value={rule.type} onChange={(event) => updateRule(index, { assetRole: rule.assetRole, type: event.target.value, maType: 'ema', window: 20, fast: 12, slow: 26, signal: 9 })}>
+                    {RELEASE_RULES.map((type) => <option value={type} key={type}>{type}</option>)}
+                  </select>
+                  {(rule.type.includes('_ma') || rule.type.includes('prior_')) ? <input aria-label={`${copy.strategy.maWindow} ${index + 1}`} value={rule.window} onChange={(event) => updateRule(index, { ...rule, window: event.target.value })} /> : null}
+                  {(rule.type.startsWith('macd_') || rule.type.startsWith('hist_')) ? (
+                    <>
+                      {['fast', 'slow', 'signal'].map((field) => (
+                        <label key={field}>{`MACD ${field[0].toUpperCase()}${field.slice(1)}`}
+                          <input
+                            aria-invalid={Boolean(fieldError(`postExitReentry.releaseValidation.group.rules[${index}].${field}`))}
+                            value={rule[field]}
+                            onChange={(event) => updateRule(index, { ...rule, [field]: event.target.value })}
+                          />
+                          {fieldError(`postExitReentry.releaseValidation.group.rules[${index}].${field}`) ? <span className="field-error">{copy.strategy.tradingDaysError}</span> : null}
+                        </label>
+                      ))}
+                    </>
+                  ) : null}
+                  {errors?.filter((error) => error.path.startsWith(`postExitReentry.releaseValidation.group.rules[${index}]`) && !['fast', 'slow', 'signal'].some((field) => error.path.endsWith(`.${field}`))).map((error) => (
+                    <span className="field-error" key={`${error.path}-${error.code}`}>{copy.strategy.releaseRuleError}</span>
+                  ))}
+                  <button type="button" disabled={rules.length === 1} onClick={() => patch({ releaseValidation: { ...release, group: { ...release.group, rules: rules.filter((_, itemIndex) => itemIndex !== index) } } })}>{copy.strategy.removeRule}</button>
+                </div>
+              ))}
+              <button type="button" onClick={() => patch({ releaseValidation: { ...release, group: { ...release.group, rules: [...rules, { assetRole: 'signal', type: 'close_above_ma', maType: 'ema', window: 20 }] } } })}>{copy.strategy.addRule}</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function SortableHeader({ column, sortConfig, onSort, copy }) {
   const isActive = sortConfig.key === column.key
   const directionLabel = isActive ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '↕'
@@ -387,6 +481,7 @@ function StrategyEditor({
   isFavorite,
   canRemove,
   canDuplicate,
+  errors,
   copy,
 }) {
   function patch(nextPatch) {
@@ -454,6 +549,7 @@ function StrategyEditor({
           copy={copy}
         />
       </div>
+      <PostExitReentryEditor strategy={strategy} errors={errors} copy={copy} onChange={(postExitReentry) => patch({ postExitReentry })} />
       <div className="rule-section risk-filter-section">
         <h3>{copy.strategy.riskFilter}</h3>
         <label className="backtest-checkbox">
@@ -513,14 +609,24 @@ export function BacktestLabPage() {
   const [sortConfig, setSortConfig] = useState({ key: 'rank', direction: 'asc' })
   const [favoriteStrategies, setFavoriteStrategies] = useState(() => readStrategyFavorites())
   const [collapsedStrategyIds, setCollapsedStrategyIds] = useState(() => new Set())
+  const [strategyErrors, setStrategyErrors] = useState({})
+  const [detailTab, setDetailTab] = useState('trades')
+  const [eventFilter, setEventFilter] = useState('')
+  const [savedExperiments, setSavedExperiments] = useState(() => readBacktestExperiments())
+  const [savedExperimentId, setSavedExperimentId] = useState('')
 
   const selectedResult = useMemo(() => {
-    return result?.strategies?.find((strategy) => strategy.id === selectedStrategyId) || result?.strategies?.[0]
+    return result?.strategies?.find((strategy) => strategy.id === selectedStrategyId && strategy.status !== 'error')
+      || result?.strategies?.find((strategy) => strategy.status !== 'error')
   }, [result, selectedStrategyId])
 
   const resultRows = useMemo(() => {
     if (!result) return []
-    const strategyRows = result.strategies.map((strategy) => ({
+    const strategyRows = result.strategies.map((strategy) => strategy.status === 'error' ? ({
+      id: strategy.id, isBenchmark: false, rank: null, strategy: strategy.name || strategy.id,
+      cagr: null, total: null, maxDrawdown: null, sharpe: null, switches: null,
+      deferred: null, expiredRejected: null, current: strategy.error?.message || 'Error',
+    }) : ({
       id: strategy.id,
       isBenchmark: false,
       rank: strategy.summary.rank,
@@ -530,6 +636,8 @@ export function BacktestLabPage() {
       maxDrawdown: strategy.summary.maxDrawdownPct,
       sharpe: strategy.summary.sharpe,
       switches: strategy.summary.switches,
+      deferred: strategy.summary.deferredEntries ?? 0,
+      expiredRejected: (strategy.summary.expiredSignals ?? 0) + (strategy.summary.rejectedSignals ?? 0),
       current: strategy.summary.currentHolding,
     }))
     const benchmarkRow = {
@@ -542,6 +650,8 @@ export function BacktestLabPage() {
       maxDrawdown: result.benchmark.summary.maxDrawdownPct,
       sharpe: result.benchmark.summary.sharpe,
       switches: 0,
+      deferred: 0,
+      expiredRejected: 0,
       current: experiment.benchmark,
     }
     return [...strategyRows, benchmarkRow].sort((left, right) => {
@@ -641,14 +751,50 @@ export function BacktestLabPage() {
     setStatus('running')
     setError('')
     try {
-      const payload = await runBacktestExperiment(experiment)
-      setResult(payload)
-      setSelectedStrategyId(payload.strategies?.[0]?.id || experiment.strategies[0].id)
+      const errorsById = Object.fromEntries(experiment.strategies.map((strategy) => [strategy.id, validateStrategyConfig(strategy)]).filter(([, errors]) => errors.length))
+      setStrategyErrors(errorsById)
+      const runnable = experiment.strategies.filter((strategy) => !errorsById[strategy.id])
+      if (!runnable.length) throw new Error(copy.strategy.invalidCandidates)
+      const payload = await runBacktestExperiment({ ...experiment, strategies: runnable })
+      const completedById = new Map((payload.strategies || []).map((strategy) => [strategy.id, strategy]))
+      const mergedStrategies = experiment.strategies.map((strategy) => {
+        if (!errorsById[strategy.id]) return completedById.get(strategy.id)
+        const first = errorsById[strategy.id][0]
+        return {
+          id: strategy.id,
+          name: strategy.name,
+          status: 'error',
+          error: { code: first.code, path: first.path, message: copy.strategy.tradingDaysError },
+        }
+      }).filter(Boolean)
+      const liveIds = new Set(experiment.strategies.map((strategy) => strategy.id))
+      mergedStrategies.push(...(payload.strategies || []).filter((strategy) => !liveIds.has(strategy.id)))
+      setResult({ ...payload, strategies: mergedStrategies })
+      setSelectedStrategyId(payload.strategies?.find((strategy) => strategy.status !== 'error')?.id || experiment.strategies[0].id)
       setStatus('complete')
     } catch (nextError) {
       setError(nextError.message)
       setStatus('error')
     }
+  }
+
+  function saveExperiment() {
+    const saved = saveBacktestExperiment(experiment, result ? {
+      generatedAt: result.generatedAt,
+      strategies: result.strategies.filter((item) => item.status !== 'error').map((item) => item.summary),
+    } : null)
+    setSavedExperiments(readBacktestExperiments())
+    setSavedExperimentId(saved.id)
+  }
+
+  function loadExperiment() {
+    const loaded = loadBacktestExperiment(savedExperimentId)
+    if (!loaded) return
+    setExperiment(loaded)
+    setSelectedStrategyId(loaded.strategies[0]?.id)
+    setResult(null)
+    setStrategyErrors({})
+    setStatus('idle')
   }
 
   return (
@@ -697,6 +843,14 @@ export function BacktestLabPage() {
             <button className="primary-action" type="submit" disabled={status === 'running'}>
               {status === 'running' ? copy.controls.running : copy.controls.run}
             </button>
+            <div className="experiment-storage-actions">
+              <button className="experiment-save-button" type="button" onClick={saveExperiment}>{copy.controls.saveExperiment}</button>
+              <select aria-label={copy.controls.savedExperiments} value={savedExperimentId} onChange={(event) => setSavedExperimentId(event.target.value)}>
+                <option value="">{copy.controls.selectExperiment}</option>
+                {savedExperiments.map((saved) => <option value={saved.id} key={saved.id}>{saved.name}</option>)}
+              </select>
+              <button className="experiment-load-button" type="button" disabled={!savedExperimentId} onClick={loadExperiment}>{copy.controls.loadExperiment}</button>
+            </div>
             {error ? <p className="backtest-error">{error}</p> : null}
           </section>
 
@@ -748,6 +902,7 @@ export function BacktestLabPage() {
               isFavorite={favoriteFingerprints.has(createStrategyFingerprint(strategy))}
               canRemove={experiment.strategies.length > 1}
               canDuplicate={experiment.strategies.length < MAX_STRATEGIES}
+              errors={strategyErrors[strategy.id] || []}
               copy={copy}
               key={strategy.id}
             />
@@ -781,6 +936,8 @@ export function BacktestLabPage() {
                       <td>{formatMetric(row.maxDrawdown, '%')}</td>
                       <td>{formatMetric(row.sharpe)}</td>
                       <td>{row.switches}</td>
+                      <td>{formatMetric(row.deferred)}</td>
+                      <td>{formatMetric(row.expiredRejected)}</td>
                       <td>{row.current}</td>
                     </tr>
                   ))}
@@ -795,7 +952,7 @@ export function BacktestLabPage() {
             <div className="section-heading">
               <h2>{copy.detail.title}</h2>
               <select value={selectedStrategyId} onChange={(event) => setSelectedStrategyId(event.target.value)}>
-                {result.strategies.map((strategy) => (
+                {result.strategies.filter((strategy) => strategy.status !== 'error').map((strategy) => (
                   <option value={strategy.id} key={strategy.id}>{strategy.summary.name}</option>
                 ))}
               </select>
@@ -803,6 +960,12 @@ export function BacktestLabPage() {
             {selectedResult ? (
               <>
                 <p className="backtest-explanation">{localizeExplanation(selectedResult.latestSignal.explanation, copy)}</p>
+                <div className="reentry-runtime-grid">
+                  <span>{copy.detail.actualHolding}: {selectedResult.latestSignal.actualHolding ?? selectedResult.latestSignal.holding}</span>
+                  <span>{copy.detail.nextTarget}: {selectedResult.latestSignal.nextTarget ?? selectedResult.latestSignal.holding}</span>
+                  <span>{copy.detail.reentryState}: {selectedResult.latestSignal.postExitReentry?.state ?? 'disabled'}</span>
+                  <span>{copy.detail.nextAction}: {selectedResult.latestSignal.postExitReentry?.nextAction ?? '—'}</span>
+                </div>
                 <div className="signal-checklist">
                   {selectedResult.latestSignal.conditions.map((condition) => (
                     <span className={condition.passed ? 'passed' : 'failed'} key={condition.label}>
@@ -810,7 +973,25 @@ export function BacktestLabPage() {
                     </span>
                   ))}
                 </div>
-                <div className="table-scroll">
+                <div className="detail-tabs">
+                  <button type="button" aria-pressed={detailTab === 'trades'} onClick={() => setDetailTab('trades')}>{copy.detail.trades}</button>
+                  <button type="button" aria-pressed={detailTab === 'events'} onClick={() => setDetailTab('events')}>{copy.detail.events}</button>
+                </div>
+                {detailTab === 'events' ? (
+                  <div className="table-scroll">
+                    <label>{copy.detail.eventFilter}
+                      <select value={eventFilter} onChange={(event) => setEventFilter(event.target.value)}>
+                        <option value="">{copy.detail.allEvents}</option>
+                        {[...new Set((selectedResult.events || []).map((event) => event.eventType))].map((type) => <option value={type} key={type}>{type}</option>)}
+                      </select>
+                    </label>
+                    <table className="backtest-table"><thead><tr><th>{copy.detail.eventDate}</th><th>{copy.detail.eventType}</th><th>{copy.detail.signalDate}</th><th>{copy.detail.releaseDate}</th></tr></thead>
+                      <tbody>{(selectedResult.events || []).filter((event) => !eventFilter || event.eventType === eventFilter).slice().sort((a, b) => b.eventDate.localeCompare(a.eventDate) || b.sequence - a.sequence).map((event) => (
+                        <tr key={event.sequence}><td>{event.eventDate}</td><td>{event.eventType}</td><td>{event.signalDate || '—'}</td><td>{event.releaseDate || '—'}</td></tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                ) : <div className="table-scroll">
                   <table className="backtest-table">
                     <thead>
                       <tr>
@@ -839,7 +1020,7 @@ export function BacktestLabPage() {
                       )}
                     </tbody>
                   </table>
-                </div>
+                </div>}
               </>
             ) : null}
           </section>

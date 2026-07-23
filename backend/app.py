@@ -42,6 +42,17 @@ class AssetBars:
     frame: pd.DataFrame
 
 
+class StrategyConfigError(ValueError):
+    def __init__(self, path: str, code: str, message: str):
+        super().__init__(message)
+        self.path = path
+        self.code = code
+        self.message = message
+
+    def as_dict(self) -> dict:
+        return {"code": self.code, "path": self.path, "message": self.message}
+
+
 class TableCellParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -260,6 +271,56 @@ def normalize_rule_group(group: dict | None, default_type: str, default_logic: s
     return {"logic": str(group.get("logic", default_logic)).lower(), "rules": normalized_rules}
 
 
+def normalize_post_exit_reentry(strategy: dict) -> dict:
+    version = strategy.get("configVersion", 1)
+    if not isinstance(version, int) or version > 2:
+        raise StrategyConfigError("configVersion", "UNSUPPORTED_CONFIG_VERSION", "Unsupported strategy config version")
+    source = strategy.get("postExitReentry")
+    if not source or not bool(source.get("enabled")):
+        return {"schemaVersion": 1, "enabled": False}
+    policy = {
+        "schemaVersion": 1,
+        "enabled": True,
+        "cooldownTradingDays": source.get("cooldownTradingDays"),
+        "signalHandling": source.get("signalHandling", "ignore"),
+        "retentionTradingDays": source.get("retentionTradingDays"),
+        "releaseValidation": source.get("releaseValidation") or {"mode": "revalidate_entry"},
+    }
+    validate_trading_days(policy["cooldownTradingDays"], "postExitReentry.cooldownTradingDays")
+    if policy["signalHandling"] not in {"ignore", "retain_latest"}:
+        raise StrategyConfigError("postExitReentry.signalHandling", "INVALID_SIGNAL_HANDLING", "Signal handling must be ignore or retain_latest")
+    if policy["signalHandling"] == "ignore":
+        return policy
+    validate_trading_days(policy["retentionTradingDays"], "postExitReentry.retentionTradingDays")
+    validation = policy["releaseValidation"]
+    if validation.get("mode") not in {"signal_still_valid", "revalidate_entry", "rule_group"}:
+        raise StrategyConfigError("postExitReentry.releaseValidation.mode", "INVALID_RELEASE_MODE", "Unsupported release validation mode")
+    if validation.get("mode") == "rule_group":
+        rules = validation.get("group", {}).get("rules")
+        if not isinstance(rules, list) or not rules:
+            raise StrategyConfigError("postExitReentry.releaseValidation.group.rules", "EMPTY_RELEASE_RULES", "At least one release rule is required")
+        allowed = {"macd_above_signal", "macd_below_signal", "hist_positive", "hist_negative", "close_above_ma", "close_below_ma", "close_above_prior_high", "close_below_prior_low"}
+        for index, rule in enumerate(rules):
+            base = f"postExitReentry.releaseValidation.group.rules[{index}]"
+            if rule.get("assetRole") not in {"signal", "risk", "fallback"}:
+                raise StrategyConfigError(f"{base}.assetRole", "INVALID_ASSET_ROLE", "Unsupported asset role")
+            if rule.get("assetRole") == "fallback" and normalize_symbol(strategy.get("fallbackAsset"), "QQQ") == "CASH":
+                raise StrategyConfigError(f"{base}.assetRole", "CASH_RULE_UNSUPPORTED", "CASH cannot be used by price rules")
+            if rule.get("type") not in allowed:
+                raise StrategyConfigError(f"{base}.type", "INVALID_RELEASE_RULE", "Unsupported release rule")
+            if rule.get("type") in {"close_above_ma", "close_below_ma", "close_above_prior_high", "close_below_prior_low"}:
+                validate_trading_days(rule.get("window"), f"{base}.window")
+            if rule.get("type") in {"macd_above_signal", "macd_below_signal", "hist_positive", "hist_negative"}:
+                for field in ("fast", "slow", "signal"):
+                    validate_trading_days(rule.get(field), f"{base}.{field}")
+    return policy
+
+
+def validate_trading_days(value, path: str):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1 or value > 252:
+        raise StrategyConfigError(path, "INVALID_TRADING_DAYS", "Enter an integer from 1 to 252 trading days")
+
+
 def entry_macd_defaults(strategy: dict) -> dict:
     entry_group = normalize_rule_group(strategy.get("entry"), "macd_cross")
     for rule in entry_group["rules"]:
@@ -361,6 +422,8 @@ def evaluate_rule(signal_close: pd.Series, rule: dict, strategy: dict, side: str
         )
         return label, signal, "cross up", metadata
 
+    if rule_type != "ma_break":
+        raise StrategyConfigError(f"{side}.rules", "INVALID_EVENT_RULE", f"Unsupported {side} rule: {rule_type}")
     window = int(rule.get("window", 15))
     ma_type = rule.get("maType", "ema")
     ma = moving_average(signal_close, window, ma_type)
@@ -423,6 +486,56 @@ def build_exit_signal(signal_close: pd.Series, strategy: dict) -> tuple[pd.Serie
     return build_rule_group_signal(signal_close, strategy, "exit")
 
 
+def evaluate_state_rule(df: pd.DataFrame, strategy: dict, rule: dict, idx: int) -> dict:
+    role = rule["assetRole"]
+    asset = {
+        "signal": normalize_symbol(strategy.get("signalAsset"), "QQQ"),
+        "risk": normalize_symbol(strategy.get("riskAsset"), "QLD"),
+        "fallback": normalize_symbol(strategy.get("fallbackAsset"), "QQQ"),
+    }[role]
+    close = df[f"{asset}_close"].iloc[: idx + 1]
+    kind = rule["type"]
+    passed = False
+    value = None
+    label = kind
+    if kind.startswith("macd_") or kind.startswith("hist_"):
+        macd = compute_macd(close, int(rule["fast"]), int(rule["slow"]), int(rule["signal"]))
+        if kind == "macd_above_signal":
+            value, passed = finite(macd["macd"].iloc[-1] - macd["signal"].iloc[-1]), bool(macd["macd"].iloc[-1] > macd["signal"].iloc[-1])
+        elif kind == "macd_below_signal":
+            value, passed = finite(macd["macd"].iloc[-1] - macd["signal"].iloc[-1]), bool(macd["macd"].iloc[-1] < macd["signal"].iloc[-1])
+        elif kind == "hist_positive":
+            value, passed = finite(macd["hist"].iloc[-1]), bool(macd["hist"].iloc[-1] > 0)
+        else:
+            value, passed = finite(macd["hist"].iloc[-1]), bool(macd["hist"].iloc[-1] < 0)
+    elif kind in {"close_above_ma", "close_below_ma"}:
+        ma = moving_average(close, int(rule["window"]), rule.get("maType", "ema"))
+        value = {"close": finite(close.iloc[-1]), "average": finite(ma.iloc[-1])}
+        passed = bool(close.iloc[-1] > ma.iloc[-1]) if kind == "close_above_ma" else bool(close.iloc[-1] < ma.iloc[-1])
+    else:
+        window = int(rule["window"])
+        prior = close.shift(1).rolling(window)
+        threshold = prior.max().iloc[-1] if kind == "close_above_prior_high" else prior.min().iloc[-1]
+        value = {"close": finite(close.iloc[-1]), "threshold": finite(threshold)}
+        passed = bool(close.iloc[-1] > threshold) if kind == "close_above_prior_high" else bool(close.iloc[-1] < threshold)
+    return {"label": label, "value": value, "passed": passed}
+
+
+def evaluate_release_validation(df: pd.DataFrame, strategy: dict, policy: dict, idx: int, entry_signal: pd.Series) -> tuple[bool, dict]:
+    validation = policy["releaseValidation"]
+    mode = validation["mode"]
+    if mode == "signal_still_valid":
+        return True, {"mode": mode, "logic": None, "passed": True, "conditions": []}
+    if mode == "revalidate_entry":
+        passed = bool(entry_signal.iloc[idx])
+        return passed, {"mode": mode, "logic": None, "passed": passed, "conditions": []}
+    group = validation["group"]
+    snapshots = [evaluate_state_rule(df, strategy, rule, idx) for rule in group["rules"]]
+    logic = str(group.get("logic", "and")).lower()
+    passed = any(item["passed"] for item in snapshots) if logic == "or" else all(item["passed"] for item in snapshots)
+    return passed, {"mode": mode, "logic": logic.upper(), "passed": passed, "conditions": snapshots}
+
+
 def asset_gross(df: pd.DataFrame, idx: int, asset: str) -> float:
     if asset == "CASH":
         return 1.0
@@ -459,7 +572,7 @@ def summarize_returns(name: str, values: list[float], dates: pd.Series, switches
     }
 
 
-def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary: dict) -> dict:
+def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary: dict, signal_overrides: dict | None = None) -> dict:
     name = strategy_name(strategy, index)
     signal_asset = normalize_symbol(strategy.get("signalAsset"), "QQQ")
     risk_asset = normalize_symbol(strategy.get("riskAsset"), "QLD")
@@ -467,6 +580,10 @@ def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary
     signal_close = df[f"{signal_asset}_close"]
     entry_signal = build_entry_signal(df, signal_close, strategy)
     exit_signal, diagnostics = build_exit_signal(signal_close, strategy)
+    if signal_overrides is not None:
+        entry_signal = pd.Series(signal_overrides["entry"], index=df.index, dtype=bool)
+        exit_signal = pd.Series(signal_overrides["exit"], index=df.index, dtype=bool)
+    policy = normalize_post_exit_reentry(strategy)
     cape_enabled, cape_maximum = cape_filter_config(strategy)
     if cape_enabled and "cape" not in df:
         raise ValueError("CAPE data is required by the selected risk filter")
@@ -477,55 +594,161 @@ def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary
     )
 
     held = fallback_asset
-    pending: str | None = None
-    pending_reason: str | None = None
+    pending: dict | None = None
     base_risk_on = False
     values = [1.0]
     trades = []
+    events = []
     switches = 0
+    event_sequence = 0
+    cooldown_start_index = None
+    cooldown_start_date = None
+    deferred = None
+    release_snapshot = None
+    counters = {"deferredEntries": 0, "expiredSignals": 0, "rejectedSignals": 0}
+
+    def event(event_type: str, idx: int, **fields):
+        nonlocal event_sequence
+        event_sequence += 1
+        events.append({
+            "sequence": event_sequence,
+            "eventDate": df.at[idx, "date"].date().isoformat(),
+            "eventType": event_type,
+            "holding": held,
+            "cooldownProgress": None if cooldown_start_index is None else {
+                "elapsed": max(0, idx - cooldown_start_index),
+                "total": policy.get("cooldownTradingDays"),
+            },
+            **fields,
+        })
 
     for idx in range(1, len(df)):
         if pending is None:
             gross = asset_gross(df, idx, held)
         else:
             old = held
-            gross = switch_gross(df, idx, old, pending)
-            held = pending
+            target = pending["targetAsset"]
+            gross = switch_gross(df, idx, old, target)
+            held = target
+            order = pending
             pending = None
             switches += 1
-            reason_prefix = pending_reason or ("Entry signal" if held == risk_asset else "Exit signal")
-            pending_reason = None
             trades.append(
                 {
-                    "signalDate": df.at[idx - 1, "date"].date().isoformat(),
+                    "signalDate": order["sourceSignalDate"],
+                    "sourceSignalDate": order["sourceSignalDate"],
+                    "releaseDate": order.get("releaseDate"),
+                    "orderScheduledDate": order["scheduledDate"],
                     "executionDate": df.at[idx, "date"].date().isoformat(),
+                    "executionPrice": None if held == "CASH" else finite(df.at[idx, f"{held}_open"]),
+                    "executionDeferred": False,
+                    "deferred": bool(order.get("releaseDate")),
                     "from": old,
                     "to": held,
-                    "reason": reason_prefix,
+                    "reason": order["reason"],
                     "equityAfterTrade": round(values[-1] * gross, 4),
                 }
             )
+            event("Entry Executed" if held == risk_asset else "Exit Executed", idx, signalDate=order["sourceSignalDate"], releaseDate=order.get("releaseDate"))
+            if policy["enabled"] and order["kind"] == "exit" and old == risk_asset and held == fallback_asset:
+                cooldown_start_index = idx
+                cooldown_start_date = df.at[idx, "date"].date().isoformat()
+                deferred = None
+                event("Cooldown Started", idx, signalDate=order["sourceSignalDate"])
 
         values.append(values[-1] * gross)
 
-        if not base_risk_on and bool(entry_signal.iloc[idx]):
-            base_risk_on = True
-        elif base_risk_on and bool(exit_signal.iloc[idx]):
+        entry_today = bool(entry_signal.iloc[idx])
+        exit_today = bool(exit_signal.iloc[idx])
+        if base_risk_on and exit_today and held == risk_asset:
             base_risk_on = False
+            if pending is None:
+                pending = {
+                    "targetAsset": fallback_asset, "kind": "exit", "reason": "Exit signal",
+                    "sourceSignalDate": df.at[idx, "date"].date().isoformat(),
+                    "scheduledDate": df.at[idx, "date"].date().isoformat(), "releaseDate": None,
+                }
+                event("Order Scheduled", idx, signalDate=pending["sourceSignalDate"], releaseDate=None)
 
-        target = risk_asset if base_risk_on and bool(cape_permitted.iloc[idx]) else fallback_asset
-        if target != held:
-            pending = target
-            if cape_enabled and base_risk_on and target == fallback_asset:
-                pending_reason = "CAPE risk filter"
-            elif cape_enabled and base_risk_on and target == risk_asset and not bool(entry_signal.iloc[idx]):
-                pending_reason = "CAPE risk filter cleared"
+        cooling = policy["enabled"] and cooldown_start_index is not None and idx - cooldown_start_index < policy["cooldownTradingDays"]
+        release_day = policy["enabled"] and cooldown_start_index is not None and idx - cooldown_start_index == policy["cooldownTradingDays"]
+
+        if deferred is not None and idx > deferred["validThroughIndex"]:
+            event("Signal Expired", idx, signalDate=deferred["signalDate"], validThrough=deferred["validThroughDate"])
+            counters["expiredSignals"] += 1
+            deferred = None
+
+        release_sources = []
+        if release_day and deferred is not None:
+            passed, release_snapshot = evaluate_release_validation(df, strategy, policy, idx, entry_signal)
+            if passed:
+                base_risk_on = True
+                pending = {
+                    "targetAsset": risk_asset, "kind": "entry", "reason": "Deferred entry signal",
+                    "sourceSignalDate": deferred["signalDate"], "releaseDate": df.at[idx, "date"].date().isoformat(),
+                    "scheduledDate": df.at[idx, "date"].date().isoformat(),
+                }
+                event("Release Passed", idx, signalDate=deferred["signalDate"], releaseDate=pending["releaseDate"], ruleSnapshot=release_snapshot["conditions"])
+                release_sources.append(deferred["signalDate"])
+                event("Order Scheduled", idx, signalDate=deferred["signalDate"], releaseDate=pending["releaseDate"])
+                deferred["status"] = "released"
             else:
-                pending_reason = "Entry signal" if target == risk_asset else "Exit signal"
+                event("Release Rejected", idx, signalDate=deferred["signalDate"], releaseDate=df.at[idx, "date"].date().isoformat(), ruleSnapshot=release_snapshot["conditions"])
+                counters["rejectedSignals"] += 1
+            deferred = None
+
+        if entry_today and pending is not None and pending.get("releaseDate"):
+            pending["sourceSignalDates"] = [*release_sources, df.at[idx, "date"].date().isoformat()]
+            events[-1]["sourceSignalDates"] = pending["sourceSignalDates"]
+        elif entry_today and not base_risk_on:
+            signal_date = df.at[idx, "date"].date().isoformat()
+            if cooling:
+                if policy["signalHandling"] == "ignore":
+                    event("Entry Ignored", idx, signalDate=signal_date)
+                else:
+                    retention = policy["retentionTradingDays"]
+                    valid_index = idx + retention - 1
+                    next_deferred = {
+                        "signalDate": signal_date,
+                        "signalIndex": idx,
+                        "validThroughIndex": valid_index,
+                        "validThroughDate": df.at[valid_index, "date"].date().isoformat() if valid_index < len(df) else None,
+                        "validThroughOutOfRange": valid_index >= len(df),
+                        "status": "retained",
+                        "ruleSnapshot": [],
+                    }
+                    event_type = "Signal Replaced" if deferred is not None else "Signal Retained"
+                    event(event_type, idx, signalDate=signal_date, validThrough=next_deferred["validThroughDate"])
+                    deferred = next_deferred
+                    counters["deferredEntries"] += 1
+            else:
+                base_risk_on = True
+                entry_target = risk_asset if bool(cape_permitted.iloc[idx]) else fallback_asset
+                if pending is None and held != entry_target:
+                    pending = {
+                        "targetAsset": entry_target,
+                        "kind": "entry" if entry_target == risk_asset else "risk_filter",
+                        "reason": "Entry signal" if entry_target == risk_asset else "CAPE risk filter",
+                        "sourceSignalDate": signal_date, "scheduledDate": signal_date, "releaseDate": None,
+                    }
+                    event("Order Scheduled", idx, signalDate=signal_date, releaseDate=None)
+
+        if cape_enabled and base_risk_on and pending is None:
+            target = risk_asset if bool(cape_permitted.iloc[idx]) else fallback_asset
+            if target != held:
+                pending = {
+                    "targetAsset": target, "kind": "risk_filter",
+                    "reason": "CAPE risk filter" if target == fallback_asset else "CAPE risk filter cleared",
+                    "sourceSignalDate": df.at[idx, "date"].date().isoformat(),
+                    "scheduledDate": df.at[idx, "date"].date().isoformat(), "releaseDate": None,
+                }
+                event("Order Scheduled", idx, signalDate=pending["sourceSignalDate"], releaseDate=None)
 
     summary = summarize_returns(name, values, df["date"], switches)
     summary["winVsBenchmark"] = (summary["cagrPct"] or -999) > (benchmark_summary.get("cagrPct") or -999)
-    summary["currentHolding"] = pending or held
+    summary["currentHolding"] = pending["targetAsset"] if pending else held
+    summary["actualHolding"] = held
+    summary.update(counters)
     summary["latestSignal"] = "SWITCH" if pending else "HOLD"
     summary["rank"] = None
     latest_close = finite(signal_close.iloc[-1])
@@ -548,12 +771,36 @@ def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary
             {"date": date.date().isoformat(), "value": round(value, 4)}
             for date, value in zip(pd.to_datetime(df["date"]), values)
         ],
-        "trades": trades[-100:],
+        "status": "complete",
+        "trades": trades,
+        "events": events,
         "latestSignal": {
-            "holding": pending or held,
+            "holding": pending["targetAsset"] if pending else held,
+            "actualHolding": held,
+            "nextTarget": pending["targetAsset"] if pending else held,
             "action": "SWITCH" if pending else "HOLD",
             "conditions": latest_conditions,
-            "explanation": explain_latest_signal(signal_asset, risk_asset, fallback_asset, pending or held, pending, diagnostics, latest_close),
+            "explanation": explain_latest_signal(signal_asset, risk_asset, fallback_asset, pending["targetAsset"] if pending else held, pending["targetAsset"] if pending else None, diagnostics, latest_close),
+            "postExitReentry": {
+                "enabled": policy["enabled"],
+                "state": "order_pending" if pending and pending.get("releaseDate") else (
+                    "pending_signal" if deferred else (
+                        "cooling_down" if policy["enabled"] and cooldown_start_index is not None and len(df) - 1 - cooldown_start_index < policy["cooldownTradingDays"] else "inactive"
+                    )
+                ),
+                "cooldownStartDate": cooldown_start_date,
+                "cooldownElapsed": None if cooldown_start_index is None else len(df) - 1 - cooldown_start_index,
+                "cooldownTotal": policy.get("cooldownTradingDays"),
+                "earliestReleaseDate": (
+                    df.at[cooldown_start_index + policy["cooldownTradingDays"], "date"].date().isoformat()
+                    if cooldown_start_index is not None and cooldown_start_index + policy["cooldownTradingDays"] < len(df) else None
+                ),
+                "earliestReleaseOutOfRange": bool(cooldown_start_index is not None and cooldown_start_index + policy["cooldownTradingDays"] >= len(df)),
+                "deferredSignal": deferred,
+                "releaseValidation": release_snapshot,
+                "pendingOrder": pending,
+                "nextAction": "execute_next_available_open" if pending else ("wait_for_release" if deferred else "follow_normal_rules"),
+            },
         },
     }
 
@@ -633,8 +880,21 @@ def backtests():
         if len(df) < 80:
             return jsonify({"error": "Aligned data has fewer than 80 daily bars", "dataAudit": audit}), 400
         benchmark_result = build_benchmark(df, benchmark)
-        results = [run_strategy(df, strategy, index, benchmark_result["summary"]) for index, strategy in enumerate(strategies)]
-        ranked = sorted(results, key=lambda item: item["summary"]["cagrPct"] or -999, reverse=True)
+        results = []
+        for index, strategy in enumerate(strategies):
+            try:
+                results.append(run_strategy(df, strategy, index, benchmark_result["summary"]))
+            except StrategyConfigError as exc:
+                results.append({
+                    "id": strategy.get("id") or f"strategy-{index + 1}",
+                    "status": "error",
+                    "error": exc.as_dict(),
+                })
+        ranked = sorted(
+            [item for item in results if item.get("status") != "error"],
+            key=lambda item: item["summary"]["cagrPct"] or -999,
+            reverse=True,
+        )
         for rank, item in enumerate(ranked, start=1):
             item["summary"]["rank"] = rank
         return jsonify(
