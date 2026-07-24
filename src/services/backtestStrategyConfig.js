@@ -20,6 +20,12 @@ const RELEASE_TYPES = new Set([
   'macd_above_signal', 'macd_below_signal', 'hist_positive', 'hist_negative',
   'close_above_ma', 'close_below_ma', 'close_above_prior_high', 'close_below_prior_low',
 ])
+const WINDOW_RELEASE_TYPES = new Set([
+  'close_above_ma', 'close_below_ma', 'close_above_prior_high', 'close_below_prior_low',
+])
+const MACD_RELEASE_TYPES = new Set([
+  'macd_above_signal', 'macd_below_signal', 'hist_positive', 'hist_negative',
+])
 const ASSET_ROLES = new Set(['signal', 'risk', 'fallback'])
 
 const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value))
@@ -107,10 +113,10 @@ export function validateStrategyConfig(input) {
     if (rule.assetRole === 'fallback' && String(strategy.fallbackAsset).toUpperCase() === 'CASH') {
       errors.push({ path: `${base}.assetRole`, code: 'CASH_RULE_UNSUPPORTED', messageKey: 'validation.cashRule' })
     }
-    if (rule.type?.includes('ma') || rule.type?.includes('prior_')) {
+    if (WINDOW_RELEASE_TYPES.has(rule.type)) {
       if (!isTradingDayInteger(rule.window)) errors.push(tradingDayError(`${base}.window`))
     }
-    if (rule.type?.startsWith('macd_') || rule.type?.startsWith('hist_')) {
+    if (MACD_RELEASE_TYPES.has(rule.type)) {
       for (const field of ['fast', 'slow', 'signal']) {
         if (!isTradingDayInteger(rule[field])) errors.push(tradingDayError(`${base}.${field}`))
       }

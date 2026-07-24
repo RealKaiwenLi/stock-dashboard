@@ -57,6 +57,27 @@ describe('backtestStrategyConfig', () => {
     expect(error.path).toBe('postExitReentry.releaseValidation.group.rules[0].assetRole')
   })
 
+  it('accepts a MACD release rule without an unrelated moving-average window', () => {
+    const errors = validateStrategyConfig({
+      fallbackAsset: 'QQQ',
+      postExitReentry: {
+        enabled: true,
+        cooldownTradingDays: 14,
+        signalHandling: 'retain_latest',
+        retentionTradingDays: 5,
+        releaseValidation: {
+          mode: 'rule_group',
+          group: {
+            logic: 'and',
+            rules: [{ assetRole: 'signal', type: 'macd_above_signal', fast: 24, slow: 60, signal: 5 }],
+          },
+        },
+      },
+    })
+
+    expect(errors).toEqual([])
+  })
+
   it('rejects future config versions', () => {
     expect(() => normalizeStrategyConfig({ configVersion: 99 })).toThrow(/Unsupported/)
   })
