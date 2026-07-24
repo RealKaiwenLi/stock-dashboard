@@ -1390,11 +1390,20 @@
 
 .experiment-storage-actions {
   display: grid;
-  grid-template-columns: auto minmax(150px, 1fr) auto auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   align-items: center;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.experiment-storage-actions > * {
+  min-width: 0;
+}
+
+.experiment-storage-actions .experiment-save-button,
+.experiment-storage-actions select {
+  grid-column: 1 / -1;
 }
 
 .experiment-storage-actions button {
