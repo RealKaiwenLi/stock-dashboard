@@ -99,6 +99,16 @@ Test command:
 - Do not hardcode translated UI strings in React components or service modules.
 - Keep the `zh` and `en` translation structures aligned and update `src/i18n/translations.test.js` when adding translation keys or localization behavior.
 
+## Research
+
+- Store research documentation in `docs/research/`.
+- Store reproducible research scripts and their focused tests in `scripts/research/`.
+- Name research files after the capability or research topic rather than a single ticker.
+- Treat `outputs/` as generated output and do not commit it.
+- After changing a research simulator, run its focused Python test in addition to relevant project verification commands.
+- Research conclusions should record the data range, execution assumptions, out-of-sample validation, and known limitations.
+- Research scripts and results do not directly change production holdings; production strategy changes still require the normal BRD, planning, and TDD workflow.
+
 Test watch command:
 
 - `npm run test:watch`
