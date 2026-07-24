@@ -960,7 +960,7 @@ export const runStrategy = (rows, strategy, index, benchmarkSummary, signalOverr
     if (entrySignal[idx] && pending?.releaseDate) {
       pending.sourceSignalDates = [pending.sourceSignalDate, rows[idx].date]
       events.at(-1).sourceSignalDates = pending.sourceSignalDates
-    } else if (entrySignal[idx] && !baseRiskOn) {
+    } else if (entrySignal[idx] && !baseRiskOn && pending?.kind !== 'exit') {
       if (cooling) {
         if (policy.signalHandling === 'ignore') addEvent('Entry Ignored', idx, { signalDate: rows[idx].date })
         else {

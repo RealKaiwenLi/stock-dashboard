@@ -700,7 +700,11 @@ def run_strategy(df: pd.DataFrame, strategy: dict, index: int, benchmark_summary
         if entry_today and pending is not None and pending.get("releaseDate"):
             pending["sourceSignalDates"] = [*release_sources, df.at[idx, "date"].date().isoformat()]
             events[-1]["sourceSignalDates"] = pending["sourceSignalDates"]
-        elif entry_today and not base_risk_on:
+        elif (
+            entry_today
+            and not base_risk_on
+            and not (pending is not None and pending.get("kind") == "exit")
+        ):
             signal_date = df.at[idx, "date"].date().isoformat()
             if cooling:
                 if policy["signalHandling"] == "ignore":
