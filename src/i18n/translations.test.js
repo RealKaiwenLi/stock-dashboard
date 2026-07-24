@@ -22,10 +22,13 @@ describe('translations', () => {
   })
 
   it('provides localized post-exit re-entry guidance', () => {
-    const zh = getBacktestTranslations('zh').strategy
-    const en = getBacktestTranslations('en').strategy
+    const zhBacktest = getBacktestTranslations('zh')
+    const enBacktest = getBacktestTranslations('en')
+    const zh = zhBacktest.strategy
+    const en = enBacktest.strategy
 
     expect(zh.retention).toBe('新入场信号保留交易日数')
+    expect(zhBacktest.controls.deleteExperimentConfirm('测试实验')).toContain('测试实验')
     expect(zh.postExitSummary.retain(10, 5, '信号仍有效即可')).toContain('保留 5 个交易日')
     expect(en.postExitSummary.retain(10, 5, 'signal remains valid')).toContain('retain the latest entry signal for 5 trading days')
   })

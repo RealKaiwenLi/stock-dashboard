@@ -1390,7 +1390,7 @@
 
 .experiment-storage-actions {
   display: grid;
-  grid-template-columns: auto minmax(150px, 1fr) auto;
+  grid-template-columns: auto minmax(150px, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   padding-top: 12px;
@@ -1413,6 +1413,16 @@
   border-color: var(--accent);
   background: var(--accent);
   color: white;
+}
+
+.experiment-storage-actions .experiment-delete-button {
+  border-color: color-mix(in srgb, #c44747 35%, var(--border));
+  color: #b43f3f;
+}
+
+.experiment-storage-actions .experiment-delete-button:hover:not(:disabled) {
+  border-color: #c44747;
+  background: color-mix(in srgb, #c44747 7%, var(--surface));
 }
 
 .experiment-storage-actions button:hover:not(:disabled) {

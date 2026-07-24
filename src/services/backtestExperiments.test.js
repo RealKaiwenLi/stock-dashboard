@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BACKTEST_EXPERIMENTS_STORAGE_KEY, loadBacktestExperiment, saveBacktestExperiment } from './backtestExperiments'
+import {
+  BACKTEST_EXPERIMENTS_STORAGE_KEY,
+  deleteBacktestExperiment,
+  loadBacktestExperiment,
+  readBacktestExperiments,
+  saveBacktestExperiment,
+} from './backtestExperiments'
 
 const storage = () => {
   const data = new Map()
@@ -19,5 +25,16 @@ describe('backtest experiments', () => {
     expect(loaded.strategies[0].events).toBeUndefined()
     expect(loaded.resultSummary).toBeNull()
     expect(target.setItem).toHaveBeenCalledWith(BACKTEST_EXPERIMENTS_STORAGE_KEY, expect.any(String))
+  })
+
+  it('deletes only the selected saved experiment', () => {
+    const target = storage()
+    const first = saveBacktestExperiment({ name: 'First', strategies: [] }, null, target)
+    const second = saveBacktestExperiment({ name: 'Second', strategies: [] }, null, target)
+
+    const remaining = deleteBacktestExperiment(first.id, target)
+
+    expect(remaining.map((item) => item.id)).toEqual([second.id])
+    expect(readBacktestExperiments(target).map((item) => item.name)).toEqual(['Second'])
   })
 })

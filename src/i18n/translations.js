@@ -317,6 +317,7 @@ const backtestTranslations = {
     controls: {
       title: '实验设置',
       experimentName: '实验名称',
+      experimentNameHelper: '保存时会使用这个名称；例如“QQQ/QLD 冷却期对比”。',
       start: '开始日期',
       end: '结束日期',
       benchmark: 'Benchmark',
@@ -327,6 +328,8 @@ const backtestTranslations = {
       savedExperiments: '已保存实验',
       selectExperiment: '选择实验',
       loadExperiment: '加载实验',
+      deleteExperiment: '删除实验',
+      deleteExperimentConfirm: (name) => `确定删除实验“${name}”吗？此操作无法撤销。`,
     },
     strategy: {
       section: '策略候选',
@@ -481,6 +484,7 @@ const backtestTranslations = {
     controls: {
       title: 'Experiment Settings',
       experimentName: 'Experiment Name',
+      experimentNameHelper: 'This name is used when saving, for example “QQQ/QLD cooldown comparison.”',
       start: 'Start Date',
       end: 'End Date',
       benchmark: 'Benchmark',
@@ -491,6 +495,8 @@ const backtestTranslations = {
       savedExperiments: 'Saved Experiments',
       selectExperiment: 'Select experiment',
       loadExperiment: 'Load Experiment',
+      deleteExperiment: 'Delete Experiment',
+      deleteExperimentConfirm: (name) => `Delete “${name}”? This cannot be undone.`,
     },
     strategy: {
       section: 'Strategy Candidates',

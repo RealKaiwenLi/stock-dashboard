@@ -5,7 +5,12 @@ import { createStrategy, DEFAULT_BACKTEST_EXPERIMENT, runBacktestExperiment } fr
 import { createStrategyFingerprint, readStrategyFavorites, removeStrategyFavorite, saveStrategyFavorite } from '../services/strategyFavorites'
 import { getBacktestTranslations } from '../i18n/translations'
 import { normalizeStrategyConfig, summarizePostExitReentry, validateStrategyConfig } from '../services/backtestStrategyConfig'
-import { loadBacktestExperiment, readBacktestExperiments, saveBacktestExperiment } from '../services/backtestExperiments'
+import {
+  deleteBacktestExperiment,
+  loadBacktestExperiment,
+  readBacktestExperiments,
+  saveBacktestExperiment,
+} from '../services/backtestExperiments'
 
 const MAX_STRATEGIES = 5
 const BACKTEST_COLORS = ['#4C78A8', '#F58518', '#54A24B', '#E45756', '#72B7B2']
@@ -797,6 +802,21 @@ export function BacktestLabPage() {
     setStatus('idle')
   }
 
+  function deleteExperiment() {
+    if (!savedExperimentId) return
+    const saved = savedExperiments.find((item) => item.id === savedExperimentId)
+    if (!saved || !globalThis.confirm(copy.controls.deleteExperimentConfirm(saved.name))) return
+    setSavedExperiments(deleteBacktestExperiment(savedExperimentId))
+    setSavedExperimentId('')
+    if (experiment.id === savedExperimentId) {
+      setExperiment((current) => {
+        const next = { ...current }
+        delete next.id
+        return next
+      })
+    }
+  }
+
   return (
     <main className="dashboard-shell page-shell backtest-lab">
       <header className="page-header">
@@ -816,7 +836,8 @@ export function BacktestLabPage() {
             </div>
             <label>
               {copy.controls.experimentName}
-              <input value={experiment.name} onChange={(event) => patchExperiment({ name: event.target.value })} />
+              <input aria-label={copy.controls.experimentName} value={experiment.name} onChange={(event) => patchExperiment({ name: event.target.value })} />
+              <span className="field-helper">{copy.controls.experimentNameHelper}</span>
             </label>
             <div className="backtest-form-grid">
               <label>
@@ -850,6 +871,7 @@ export function BacktestLabPage() {
                 {savedExperiments.map((saved) => <option value={saved.id} key={saved.id}>{saved.name}</option>)}
               </select>
               <button className="experiment-load-button" type="button" disabled={!savedExperimentId} onClick={loadExperiment}>{copy.controls.loadExperiment}</button>
+              <button className="experiment-delete-button" type="button" disabled={!savedExperimentId} onClick={deleteExperiment}>{copy.controls.deleteExperiment}</button>
             </div>
             {error ? <p className="backtest-error">{error}</p> : null}
           </section>

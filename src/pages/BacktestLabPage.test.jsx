@@ -261,6 +261,26 @@ describe('BacktestLabPage', () => {
     expect(screen.getByText(/冷却期间暂存最新入场信号，并保留 5 个交易日/)).toBeInTheDocument()
   })
 
+  it('uses the experiment name when saving and deletes the selected experiment', async () => {
+    const user = userEvent.setup()
+    const confirmMock = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirmMock)
+    renderBacktest()
+
+    const nameInput = screen.getByLabelText('Experiment Name')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Cooldown comparison')
+    await user.click(screen.getByRole('button', { name: 'Save Experiment' }))
+
+    const savedSelect = screen.getByLabelText('Saved Experiments')
+    await user.selectOptions(savedSelect, screen.getByRole('option', { name: 'Cooldown comparison' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Experiment' }))
+
+    expect(confirmMock).toHaveBeenCalledWith('Delete “Cooldown comparison”? This cannot be undone.')
+    expect(screen.queryByRole('option', { name: 'Cooldown comparison' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete Experiment' })).toBeDisabled()
+  })
+
   it('saves a strategy as a local favorite and adds it back with one click', async () => {
     const user = userEvent.setup()
     renderBacktest()

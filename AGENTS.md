@@ -93,6 +93,12 @@ Test command:
 - `npm test`
 - Runs Vitest once with `vitest run`.
 
+## Internationalization
+
+- Add or update all user-facing Chinese and English UI text in `src/i18n/translations.js`.
+- Do not hardcode translated UI strings in React components or service modules.
+- Keep the `zh` and `en` translation structures aligned and update `src/i18n/translations.test.js` when adding translation keys or localization behavior.
+
 Test watch command:
 
 - `npm run test:watch`

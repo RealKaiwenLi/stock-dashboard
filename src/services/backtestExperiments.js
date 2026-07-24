@@ -28,7 +28,7 @@ export function readBacktestExperiments(storage = globalThis.localStorage) {
 export function saveBacktestExperiment(experiment, resultSummary = null, storage = globalThis.localStorage) {
   const current = readBacktestExperiments(storage)
   const now = new Date().toISOString()
-  const id = experiment.id || `experiment-${Date.now()}`
+  const id = experiment.id || `experiment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const existing = current.find((item) => item.id === id)
   const saved = {
     version: 1,
@@ -58,4 +58,11 @@ export function loadBacktestExperiment(id, storage = globalThis.localStorage) {
     })),
     resultSummary: null,
   }
+}
+
+export function deleteBacktestExperiment(id, storage = globalThis.localStorage) {
+  if (!id) return readBacktestExperiments(storage)
+  const next = readBacktestExperiments(storage).filter((item) => item.id !== id)
+  storage?.setItem(BACKTEST_EXPERIMENTS_STORAGE_KEY, JSON.stringify(next))
+  return next
 }
