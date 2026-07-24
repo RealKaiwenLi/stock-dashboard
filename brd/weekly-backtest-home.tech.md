@@ -12,7 +12,7 @@ Worker 查询 `报告类型 = 纳斯达克策略回测` 的主页面，读取页
 - `src/services/weeklyBacktestsApi.js`: fetch adapter 和 payload normalization。
 - `src/components/WeeklyBacktestWidget.jsx`: 周次选择、元数据、排序表、状态 UI。
 - `src/pages/DashboardHome.jsx`: 删除旧市场 widget orchestration，接入周度回测。
-- `src/i18n/dashboardCopy.js`: 新增中英文文案。
+- `src/i18n/translations.js`: 新增中英文翻译。
 - `src/App.test.jsx`、新增 service/component 测试：覆盖首页范围、加载和排序。
 - `src/App.css`: 新 widget 桌面与移动端样式。
 

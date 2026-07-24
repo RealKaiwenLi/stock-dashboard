@@ -198,13 +198,13 @@
 
 ### 测试任务
 
-- [ ] T051 [US8] 创建 `src/i18n/dashboardCopy.test.js`，覆盖中文/英文核心文案、状态 label、metric 解释和免责声明
+- [ ] T051 [US8] 创建 `src/i18n/translations.test.js`，覆盖中文/英文核心翻译、状态 label、metric 解释和免责声明
 - [ ] T052 [US8] 修改 `src/App.test.jsx`，写失败测试确认默认中文、点击 English 后英文文案可见、点击中文后恢复中文
 - [ ] T053 [US8] 修改 `src/App.test.jsx`，写失败测试确认切换语言前后 SPY/QQQ/DIA/VIX 数值、百分比和 gauge 分数保持不变，且不因语言切换重新请求远程数据
 
 ### 实现任务
 
-- [ ] T054 [US8] 创建 `src/i18n/dashboardCopy.js`，集中维护 `zh` / `en` 文案、状态映射、指数名称、metric 解释和免责声明
+- [ ] T054 [US8] 创建 `src/i18n/translations.js`，集中维护 `zh` / `en` 翻译、状态映射、指数名称、metric 解释和免责声明
 - [ ] T055 [US8] 修改 `src/pages/DashboardHome.jsx`，持有 `language` state，默认 `zh`，把当前语言文案传给子组件
 - [ ] T056 [US8] 修改 `src/components/TopBar.jsx`，渲染语言切换控件并用 `aria-pressed` 表达当前语言
 - [ ] T057 [US8] 修改 `src/components/IndexCard.jsx`、`src/components/LineChart.jsx`、`src/components/GaugeCard.jsx`、`src/components/MarketStyleCard.jsx`、`src/components/FearGreedCard.jsx` 和 `src/components/MetricExplanation.jsx`，使用当前语言文案

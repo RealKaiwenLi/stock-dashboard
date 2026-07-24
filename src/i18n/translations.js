@@ -1,4 +1,4 @@
-const copy = {
+const dashboardTranslations = {
   zh: {
     appTitle: '美股大盘 Dashboard',
     brand: {
@@ -250,7 +250,7 @@ const indexNames = {
   VIX: { zh: '波动率指数', en: 'Volatility Index' },
 }
 
-const componentCopy = {
+const componentTranslations = {
   VOLATILITY: {
     zh: {
       label: '波动率',
@@ -303,7 +303,7 @@ const componentCopy = {
   },
 }
 
-const backtestCopy = {
+const backtestTranslations = {
   zh: {
     eyebrow: 'Backtest Lab',
     title: '策略回测实验台',
@@ -634,12 +634,12 @@ const backtestCopy = {
   },
 }
 
-export function getDashboardCopy(language = 'en') {
-  return copy[language] ?? copy.en
+export function getDashboardTranslations(language = 'en') {
+  return dashboardTranslations[language] ?? dashboardTranslations.en
 }
 
-export function getBacktestCopy(language = 'en') {
-  return backtestCopy[language] ?? backtestCopy.en
+export function getBacktestTranslations(language = 'en') {
+  return backtestTranslations[language] ?? backtestTranslations.en
 }
 
 export function getLocalizedStatusLabel(label, language = 'en') {
@@ -650,8 +650,8 @@ export function getIndexName(index, language = 'en') {
   return indexNames[index.symbol]?.[language] ?? index.nameZh ?? index.symbol
 }
 
-export function getComponentCopy(component, language = 'en') {
-  const localized = componentCopy[component.name]?.[language]
+export function getComponentTranslation(component, language = 'en') {
+  const localized = componentTranslations[component.name]?.[language]
   return {
     label: localized?.label ?? component.name,
     description: localized?.description ?? component.description,

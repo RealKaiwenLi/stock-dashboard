@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { TopBar } from './TopBar'
-import { getDashboardCopy } from '../i18n/dashboardCopy'
+import { getDashboardTranslations } from '../i18n/translations'
 
 const shellMarketData = {
   lastUpdated: '2026-06-05T16:45:00.000Z',
@@ -12,7 +12,7 @@ const shellMarketData = {
 
 export function AppShell() {
   const [language, setLanguage] = useState('en')
-  const copy = getDashboardCopy(language)
+  const copy = getDashboardTranslations(language)
 
   return (
     <>

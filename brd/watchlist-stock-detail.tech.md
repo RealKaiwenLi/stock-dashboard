@@ -270,7 +270,7 @@ Future Massive 行为：
 | `src/components/IndicatorToggleGroup.jsx` | create | 指标开关 |
 | `src/components/StockChart.jsx` | create | 图表封装 |
 | `src/App.css` | modify | 页面、card、chart、controls 样式 |
-| `src/i18n/dashboardCopy.js` | modify or split | 增加 watchlist/stock detail 文案，或拆 `stockCopy.js` |
+| `src/i18n/translations.js` | modify or split | 增加 watchlist/stock detail 翻译，或拆 `stockTranslations.js` |
 
 ## 8. 测试策略
 

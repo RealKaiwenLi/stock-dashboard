@@ -72,8 +72,8 @@
   - `FearGreedData` 包含 `score`、`status`、`components`、`updatedAt`、`fromCache`。
   - `DashboardData` 聚合三大指数、VIX、market status、data delay。
 - 本地化方案:
-  - 新增 `src/i18n/dashboardCopy.js`，集中维护 `zh` / `en` 文案、状态 label、模块标题、解释文案和免责声明。
-  - 新增 `src/i18n/dashboardCopy.test.js`，覆盖关键状态和 fallback，避免文案 key 缺失。
+  - 新增 `src/i18n/translations.js`，集中维护 `zh` / `en` 翻译、状态 label、模块标题、解释文案和免责声明。
+  - 新增 `src/i18n/translations.test.js`，覆盖关键状态和 fallback，避免翻译 key 缺失。
   - `marketMetrics.js` 的纯计算函数继续返回稳定 key，例如 `weak`、`neutral`、`strong`、`calm`、`normal`、`techLed`；UI 层用文案字典映射当前语言 label。
   - Fear & Greed API 组件名称、raw 和 API 字段保持英文；可对已知组件提供中英文 display label / explanation fallback。
   - 语言切换只改变 render 文案，不触发 market data hook 重新初始化，不重新调用 WebSocket 或 FearGreed service。
@@ -122,8 +122,8 @@
 | `src/App.css` | modify | 替换默认样式，定义 dashboard 布局和组件样式 |
 | `src/index.css` | modify | 更新全局 reset、字体、body 背景 |
 | `src/data/mockMarketData.js` | create | 提供 SPY/QQQ/DIA/VIX mock 数据、market status 和更新时间 |
-| `src/i18n/dashboardCopy.js` | create | 集中维护 dashboard 中文 / English 文案、状态映射和解释文案 |
-| `src/i18n/dashboardCopy.test.js` | create | 覆盖本地化文案 key、状态 label 和 fallback |
+| `src/i18n/translations.js` | create | 集中维护 dashboard 中文 / English 翻译、状态映射和解释文案 |
+| `src/i18n/translations.test.js` | create | 覆盖本地化翻译 key、状态 label 和 fallback |
 | `src/services/massiveWebSocket.js` | create | Massive WebSocket 连接、鉴权、订阅、重连和 cleanup |
 | `src/services/massiveMessageAdapter.js` | create | Normalize Massive `AM` aggregate message 到内部 market data update |
 | `src/services/massiveWebSocket.test.js` | create | 覆盖 subscribe/auth message、message routing 和 reconnect 边界 |
@@ -217,7 +217,7 @@
   - 再写 Massive message adapter / WebSocket service 测试。
   - 再写 Fear & Greed API/cache 测试。
   - 最后替换 `src/App.test.jsx`，覆盖页面关键中文 UI。
-  - 对 US8，先写 `src/i18n/dashboardCopy.test.js` 和 `src/App.test.jsx` 中的语言切换组件测试。
+  - 对 US8，先写 `src/i18n/translations.test.js` 和 `src/App.test.jsx` 中的语言切换组件测试。
 - 哪些任务是 MVP:
   - 所有 P0 UI、Massive WebSocket service、metric 计算、FearGreed cache-first adapter、解释入口和免责声明。
   - 顶部中英文切换、当前语言视觉状态、当前语言 metric 解释和免责声明。

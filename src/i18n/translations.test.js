@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
-  getComponentCopy,
-  getBacktestCopy,
-  getDashboardCopy,
+  getComponentTranslation,
+  getBacktestTranslations,
+  getDashboardTranslations,
   getIndexName,
   getLocalizedStatusLabel,
-} from './dashboardCopy'
+} from './translations'
 
-describe('dashboardCopy', () => {
+describe('translations', () => {
   it('provides Chinese and English dashboard labels', () => {
-    const zh = getDashboardCopy('zh')
-    const en = getDashboardCopy('en')
+    const zh = getDashboardTranslations('zh')
+    const en = getDashboardTranslations('en')
 
     expect(zh.nav.home).toBe('首页')
     expect(en.nav.home).toBe('Home')
@@ -22,8 +22,8 @@ describe('dashboardCopy', () => {
   })
 
   it('provides localized post-exit re-entry guidance', () => {
-    const zh = getBacktestCopy('zh').strategy
-    const en = getBacktestCopy('en').strategy
+    const zh = getBacktestTranslations('zh').strategy
+    const en = getBacktestTranslations('en').strategy
 
     expect(zh.retention).toBe('新入场信号保留交易日数')
     expect(zh.postExitSummary.retain(10, 5, '信号仍有效即可')).toContain('保留 5 个交易日')
@@ -41,7 +41,7 @@ describe('dashboardCopy', () => {
   it('localizes index and Fear & Greed component copy', () => {
     expect(getIndexName({ symbol: 'SPY', nameZh: '标普 500' }, 'zh')).toBe('标普 500')
     expect(getIndexName({ symbol: 'SPY', nameZh: '标普 500' }, 'en')).toBe('S&P 500')
-    expect(getComponentCopy({ name: 'VOLATILITY', description: 'VIX vs average' }, 'zh').label).toBe('波动率')
-    expect(getComponentCopy({ name: 'VOLATILITY', description: 'VIX vs average' }, 'en').label).toBe('Volatility')
+    expect(getComponentTranslation({ name: 'VOLATILITY', description: 'VIX vs average' }, 'zh').label).toBe('波动率')
+    expect(getComponentTranslation({ name: 'VOLATILITY', description: 'VIX vs average' }, 'en').label).toBe('Volatility')
   })
 })

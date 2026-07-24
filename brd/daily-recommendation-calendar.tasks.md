@@ -48,7 +48,7 @@
 
 ## 5. Homepage Integration Tasks
 
-- [ ] T029 在 `src/i18n/dashboardCopy.js` 增加 `dailyRecommendations` 中英文文案。
+- [ ] T029 在 `src/i18n/translations.js` 增加 `dailyRecommendations` 中英文翻译。
 - [ ] T030 在 `src/pages/DashboardHome.jsx` 接入 daily recommendations state、cached range 和 fetch effect。
 - [ ] T031 默认加载最近 12 个月，并默认选中最新有数据日期。
 - [ ] T032 切换月份时优先读本地 cache；只有超出 cached range 时才请求新的 rolling window。

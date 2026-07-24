@@ -2,9 +2,9 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DailyRecommendationCalendar } from './DailyRecommendationCalendar'
-import { getDashboardCopy } from '../i18n/dashboardCopy'
+import { getDashboardTranslations } from '../i18n/translations'
 
-const copy = getDashboardCopy('en').dailyRecommendations
+const copy = getDashboardTranslations('en').dailyRecommendations
 const data = {
   items: [
     {

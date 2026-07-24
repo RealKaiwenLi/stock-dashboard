@@ -18,7 +18,7 @@
 - 后端入口是 [backend/app.py](/Users/kaiwenli/Desktop/stock-dashboard/backend/app.py)，目前只有 `/api/backtests` 相关能力。
 - Vite dev proxy 已经把 `/api/*` 转到 Flask backend。
 - 首页入口是 [src/pages/DashboardHome.jsx](/Users/kaiwenli/Desktop/stock-dashboard/src/pages/DashboardHome.jsx)。
-- 文案集中在 [src/i18n/dashboardCopy.js](/Users/kaiwenli/Desktop/stock-dashboard/src/i18n/dashboardCopy.js)。
+- 翻译集中在 [src/i18n/translations.js](/Users/kaiwenli/Desktop/stock-dashboard/src/i18n/translations.js)。
 
 约束：
 
@@ -208,7 +208,7 @@ Exit EMA label 是动态的，例如 `EMA15`。解析规则：
 修改：
 
 - `src/pages/DashboardHome.jsx`
-- `src/i18n/dashboardCopy.js`
+- `src/i18n/translations.js`
 - `src/App.css`
 - `src/App.test.jsx`
 

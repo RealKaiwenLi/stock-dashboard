@@ -512,7 +512,7 @@
 
 实现：
 
-- 可以在 `src/i18n/dashboardCopy.js` 扩展，也可以新增 `src/i18n/stockCopy.js`
+- 可以在 `src/i18n/translations.js` 扩展，也可以新增 `src/i18n/stockTranslations.js`
 - 保持中文默认，英文可基本覆盖
 
 验收：

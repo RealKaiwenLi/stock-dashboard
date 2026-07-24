@@ -32,7 +32,7 @@
   - 收藏使用 `stock-dashboard.strategyFavorites.v1`。
   - 只序列化名称、资产、入场、退出和 CAPE；必须扩展并迁移再入场配置。
 - 当前没有完整实验的 localStorage service；BRD 中的“保存实验”尚未实现。US15 需要补齐最小的本地保存/加载能力。
-- `src/i18n/dashboardCopy.js` 和 `src/App.css` 已集中承载 Backtest Lab 文案和样式，可继续沿用。
+- `src/i18n/translations.js` 和 `src/App.css` 已集中承载 Backtest Lab 翻译和样式，可继续沿用。
 
 ### 2.2 Flask 后端
 
@@ -507,8 +507,8 @@ explanation
 | `src/services/backtestExperiments.test.js` | 覆盖版本、候选顺序、配置恢复和运行时剥离 |
 | `src/pages/BacktestLabPage.jsx` | 配置 UI、候选错误、结果计数、当前状态、事件表、实验保存/加载 |
 | `src/pages/BacktestLabPage.test.jsx` | 覆盖 US8、US10、US13、US15、US16 及 API 展示 |
-| `src/i18n/dashboardCopy.js` | 中英文配置、校验、状态、事件和表头文案 |
-| `src/i18n/dashboardCopy.test.js` | 保证新增 key 两种语言完整 |
+| `src/i18n/translations.js` | 中英文配置、校验、状态、事件和表头翻译 |
+| `src/i18n/translations.test.js` | 保证新增 key 两种语言完整 |
 | `src/App.css` | 再入场折叠区、错误、状态网格、tabs、事件表响应式样式 |
 | `backend/app.py` | schema 校验、event/state rule evaluator、状态机、事件/API 扩展、候选错误隔离 |
 | `backend/test_app.py` | Flask 单元与状态机边界测试 |

@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import { createChart, LineSeries } from 'lightweight-charts'
 import { createStrategy, DEFAULT_BACKTEST_EXPERIMENT, runBacktestExperiment } from '../services/backtestService'
 import { createStrategyFingerprint, readStrategyFavorites, removeStrategyFavorite, saveStrategyFavorite } from '../services/strategyFavorites'
-import { getBacktestCopy } from '../i18n/dashboardCopy'
+import { getBacktestTranslations } from '../i18n/translations'
 import { normalizeStrategyConfig, summarizePostExitReentry, validateStrategyConfig } from '../services/backtestStrategyConfig'
 import { loadBacktestExperiment, readBacktestExperiments, saveBacktestExperiment } from '../services/backtestExperiments'
 
@@ -600,7 +600,7 @@ function StrategyEditor({
 export function BacktestLabPage() {
   const outletContext = useOutletContext()
   const language = outletContext?.language || 'en'
-  const copy = getBacktestCopy(language)
+  const copy = getBacktestTranslations(language)
   const [experiment, setExperiment] = useState(DEFAULT_BACKTEST_EXPERIMENT)
   const [result, setResult] = useState(null)
   const [selectedStrategyId, setSelectedStrategyId] = useState(DEFAULT_BACKTEST_EXPERIMENT.strategies[0].id)

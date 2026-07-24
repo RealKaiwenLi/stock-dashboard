@@ -164,7 +164,7 @@
 
 前置：T003。
 
-- 在 `src/i18n/dashboardCopy.js` 增加配置、摘要、校验、状态、事件、tabs 和结果列文案。
+- 在 `src/i18n/translations.js` 增加配置、摘要、校验、状态、事件、tabs 和结果列翻译。
 - 扩展 i18n 测试，保证 zh/en key 对齐。
 - 在 `src/App.css` 增加再入场折叠区、字段错误、状态网格、事件 tabs/table 的桌面与移动样式。
 
