@@ -5,7 +5,7 @@
     "symbol": "QQQ",
     "range": "5y"
   },
-  "active_model_version": "1.0.1",
+  "active_model_version": "1.0.2",
   "model_versions": {
     "1.0.0": {
       "version": "1.0.0",
@@ -34,6 +34,21 @@
       "exit_ema": 15,
       "exit_requires_positive_hist": true,
       "sma200_cash": false
+    },
+    "1.0.2": {
+      "version": "1.0.2",
+      "name": "MACD(24,60,5)金叉买TQQQ / EMA15+Hist>0退回QQQ / 2026-07-01起算",
+      "signal_symbol": "QQQ",
+      "risk_symbol": "TQQQ",
+      "macd": {
+        "fast": 24,
+        "slow": 60,
+        "signal": 5
+      },
+      "exit_ema": 15,
+      "exit_requires_positive_hist": true,
+      "sma200_cash": false,
+      "position_start_date": "2026-07-01"
     }
   },
   "execution": "T日收盘确认 / T+1开盘成交"

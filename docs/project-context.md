@@ -88,7 +88,7 @@
 - `npm test`：前端组件、services、i18n 和 Worker 测试。
 - `npm run build`：生产前端及 Worker 构建。
 - `npm run lint`：JavaScript 和 React lint。
-- `python3 backend/test_app.py`：Flask 后端测试。
+- `cd backend && python3 test_app.py`：Flask 后端测试。
 - `python3 scripts/research/test_post_exit_reentry_candidates.py`：退出后再入场研究模拟器测试。
 
 不要在这里记录固定测试数量，因为测试数量会随着项目增长而变化。

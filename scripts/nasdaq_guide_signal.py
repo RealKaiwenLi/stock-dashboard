@@ -135,10 +135,29 @@ def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str
     if exit_requires_positive_hist:
         ema_break = ema_break & hist_positive
 
+    configured_start_date = model.get("position_start_date")
+    if configured_start_date is None:
+        position_start_date = "FULL_HISTORY"
+        position_start_bar_idx = 0
+        simulation_start_idx = 1
+    else:
+        try:
+            parsed_start_date = datetime.strptime(str(configured_start_date), "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("position_start_date must use YYYY-MM-DD format") from exc
+        eligible_rows = df.index[pd.to_datetime(df["date"]).dt.date >= parsed_start_date]
+        if eligible_rows.empty:
+            raise ValueError(
+                f"position_start_date {parsed_start_date.isoformat()} is after the latest available bar"
+            )
+        position_start_date = parsed_start_date.isoformat()
+        position_start_bar_idx = int(eligible_rows[0])
+        simulation_start_idx = position_start_bar_idx
+
     held = signal_symbol
     pending: str | None = None
 
-    for idx in range(1, len(df)):
+    for idx in range(simulation_start_idx, len(df)):
         if pending is not None:
             held = pending
             pending = None
@@ -167,6 +186,8 @@ def compute_hold_signal(df: pd.DataFrame, config: dict[str, object]) -> dict[str
         "macd_slow": int(macd_params["slow"]),
         "macd_signal": int(macd_params["signal"]),
         "exit_ema_label": f"EMA{exit_ema_span}",
+        "position_start_date": position_start_date,
+        "position_start_bar_date": df.iloc[position_start_bar_idx]["date"].date().isoformat(),
         "latest_bar_date": latest["date"].date().isoformat(),
         "latest_close": round(float(latest["close"]), 4),
         "signal_golden_cross": bool(golden_cross.iloc[latest_idx]),
@@ -205,6 +226,8 @@ def signal_table_rows(result: dict[str, object]) -> list[tuple[str, object, str]
     macd_signal = int(result["macd_signal"])
     return [
         ("模型版本", result["model_version"], "当前启用的每日推荐模型版本"),
+        ("持仓起算日", result["position_start_date"], "FULL_HISTORY 表示沿用全部可用历史"),
+        ("实际起算交易日", result["position_start_bar_date"], "起算日不是交易日时顺延到下一可用交易日"),
         ("最新完成日线日期", result["latest_bar_date"], "Yahoo 已完成的最新日线"),
         ("最新收盘价", result["latest_close"], "用于计算均线和 MACD 的收盘价"),
         ("当前收盘后状态", result["hold_after_close"], "跑完最新日线后，策略当前持仓"),
