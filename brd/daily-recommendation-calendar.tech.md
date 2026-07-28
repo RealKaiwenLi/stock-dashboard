@@ -145,6 +145,7 @@ GET /api/daily-recommendations?from=YYYY-MM-DD&to=YYYY-MM-DD
 | `recommendedHolding` | `Key Tickers.rich_text` | P0 最低要求 |
 | `status` | `Status.select.name` | Ready 等 |
 | `notionUrl` | page `url` | 打开原文 |
+| `modelVersion` | 页面正文 `模型版本` | 日历日期格显示为 `vX.Y.Z`，缺失时不显示 |
 
 可从标题 fallback：
 
@@ -278,6 +279,7 @@ UI 结构：
   - `QLD`: green
   - `TQQQ`: amber/red
   - `CASH`: gray
+- 在 ticker 下方以低强调小字号显示 `modelVersion`；仅在字段存在时渲染。
 - `SWITCH_TO_...` 日期加边框或小 marker。
 
 ### 5.4 首页接入

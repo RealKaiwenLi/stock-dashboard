@@ -95,6 +95,7 @@ P0 backend 应返回前端友好的结构，而不是让前端解析 Notion bloc
       "action": "HOLD",
       "holdAfterClose": "QLD",
       "holdForNextOpen": "QLD",
+      "modelVersion": "1.0.2",
       "modelName": "QQQ/QLD MACD + EMA",
       "signalSymbol": "QQQ",
       "riskSymbol": "QLD",
@@ -166,6 +167,7 @@ P0 backend 应返回前端友好的结构，而不是让前端解析 Notion bloc
 
 - 默认显示当前月份。
 - 有推荐数据的日期显示持仓 ticker。
+- 有模型版本数据的日期在 ticker 下方显示简洁的版本标识，例如 `v1.0.2`；旧记录缺少版本时不显示占位符。
 - 不同持仓用不同视觉标记：
   - `QQQ`
   - `QLD`
@@ -217,6 +219,7 @@ P0 可以使用项目内 CSS grid 自建月历，不强制引入新 calendar lib
 
 - 默认显示当前月份。
 - 有数据的日期展示推荐持仓 ticker。
+- 有版本数据的日期同时展示模型版本，缺少版本的旧数据仍可正常展示。
 - 点击某个有数据日期，会显示该日期详情。
 - 日期详情中的推荐持仓与日历格子一致。
 - 没有数据的日期显示为空或淡化状态。

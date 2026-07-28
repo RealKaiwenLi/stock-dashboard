@@ -374,7 +374,7 @@
 
 .position-day {
   display: grid;
-  grid-template-rows: 15px 1fr;
+  grid-template-rows: 15px auto auto;
   align-items: center;
   justify-items: center;
   min-width: 0;
@@ -408,6 +408,15 @@
   color: var(--text-strong);
   font-size: 12px;
   line-height: 1;
+}
+
+.position-day-model {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
 }
 
 .position-day.selected {
@@ -2054,6 +2063,10 @@
 
   .position-day strong {
     font-size: 10px;
+  }
+
+  .position-day-model {
+    font-size: 8px;
   }
 
   .quote-grid {

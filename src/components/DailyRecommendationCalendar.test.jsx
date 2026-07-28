@@ -65,10 +65,28 @@ describe('DailyRecommendationCalendar', () => {
 
     expect(screen.getByText('Daily Recommendation')).toBeInTheDocument()
     expect(screen.getByLabelText('Latest recommendation')).toHaveTextContent('TQQQ')
-    expect(screen.getByRole('button', { name: '2026-07-02 recommends QLD, action HOLD' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '2026-07-04 recommends TQQQ, action SWITCH_TO_TQQQ' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '2026-07-02 recommends QLD, action HOLD' })).toHaveTextContent('QLDv1.0.0')
+    expect(screen.getByRole('button', { name: '2026-07-04 recommends TQQQ, action SWITCH_TO_TQQQ' })).toHaveTextContent('TQQQv1.0.1')
     expect(screen.getByText('EMA12')).toBeInTheDocument()
     expect(screen.getByText('1.0.1')).toBeInTheDocument()
+  })
+
+  it('does not add a model version placeholder to calendar days with legacy data', () => {
+    renderCalendar({
+      data: {
+        items: [
+          {
+            date: '2026-07-02',
+            recommendedHolding: 'QQQ',
+            action: 'HOLD',
+          },
+        ],
+      },
+    })
+
+    const day = screen.getByRole('button', { name: '2026-07-02 recommends QQQ, action HOLD' })
+    expect(day).toHaveTextContent('QQQ')
+    expect(day).not.toHaveTextContent('v-')
   })
 
   it('selects a calendar day and shows that day detail', async () => {

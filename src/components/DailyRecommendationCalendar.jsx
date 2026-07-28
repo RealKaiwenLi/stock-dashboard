@@ -29,6 +29,12 @@ function formatValue(value) {
   return value ?? '-'
 }
 
+function formatModelVersion(value) {
+  const version = String(value ?? '').trim()
+  if (!version) return null
+  return /^v/i.test(version) ? version : `v${version}`
+}
+
 export function DailyRecommendationCalendar({
   copy,
   data,
@@ -123,6 +129,7 @@ export function DailyRecommendationCalendar({
               if (day.empty) return <span className="position-day empty" key={day.key} />
               const item = itemMap[day.date]
               const holding = item?.recommendedHolding
+              const modelVersion = formatModelVersion(item?.modelVersion)
               const isSwitch = item?.action && item.action !== 'HOLD'
               const tone = HOLDING_CLASS[holding] ?? 'holding-other'
               return (
@@ -136,6 +143,7 @@ export function DailyRecommendationCalendar({
                 >
                   <span>{day.day}</span>
                   {holding ? <strong>{holding}</strong> : null}
+                  {modelVersion ? <small className="position-day-model">{modelVersion}</small> : null}
                 </button>
               )
             })}
