@@ -1,9 +1,87 @@
+import io
+import json
 import unittest
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 import pandas as pd
 
-from scripts.nasdaq_guide_signal import compute_hold_signal, signal_table_rows
+from scripts.nasdaq_guide_signal import compute_hold_signal, notion_request, signal_table_rows
+
+
+class FakeJsonResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+
+class NasdaqGuideNotionRequestTest(unittest.TestCase):
+    @patch("scripts.nasdaq_guide_signal.time.sleep")
+    @patch("scripts.nasdaq_guide_signal.urlopen")
+    def test_retries_timeout_then_returns_success(self, urlopen_mock, sleep_mock):
+        urlopen_mock.side_effect = [
+            TimeoutError("temporary timeout"),
+            FakeJsonResponse({"results": [{"id": "page-1"}]}),
+        ]
+
+        result = notion_request("POST", "https://api.notion.com/v1/test", "token", max_retries=3)
+
+        self.assertEqual(result["results"][0]["id"], "page-1")
+        self.assertEqual(urlopen_mock.call_count, 2)
+        sleep_mock.assert_called_once_with(2)
+
+    @patch("scripts.nasdaq_guide_signal.time.sleep")
+    @patch("scripts.nasdaq_guide_signal.urlopen")
+    def test_retries_transient_http_error(self, urlopen_mock, sleep_mock):
+        unavailable = HTTPError(
+            "https://api.notion.com/v1/test",
+            503,
+            "Service unavailable",
+            None,
+            io.BytesIO(b'{"message":"temporary"}'),
+        )
+        urlopen_mock.side_effect = [unavailable, FakeJsonResponse({"ok": True})]
+
+        result = notion_request("GET", "https://api.notion.com/v1/test", "token", max_retries=3)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(urlopen_mock.call_count, 2)
+        sleep_mock.assert_called_once_with(2)
+
+    @patch("scripts.nasdaq_guide_signal.time.sleep")
+    @patch("scripts.nasdaq_guide_signal.urlopen")
+    def test_does_not_retry_non_transient_http_error(self, urlopen_mock, sleep_mock):
+        urlopen_mock.side_effect = HTTPError(
+            "https://api.notion.com/v1/test",
+            400,
+            "Bad request",
+            None,
+            io.BytesIO(b'{"message":"invalid"}'),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Notion API 400"):
+            notion_request("GET", "https://api.notion.com/v1/test", "token", max_retries=3)
+
+        self.assertEqual(urlopen_mock.call_count, 1)
+        sleep_mock.assert_not_called()
+
+    @patch("scripts.nasdaq_guide_signal.time.sleep")
+    @patch("scripts.nasdaq_guide_signal.urlopen", side_effect=TimeoutError("still unavailable"))
+    def test_reports_timeout_after_retry_budget_is_exhausted(self, urlopen_mock, sleep_mock):
+        with self.assertRaisesRegex(RuntimeError, "after 3 attempts"):
+            notion_request("GET", "https://api.notion.com/v1/test", "token", max_retries=3)
+
+        self.assertEqual(urlopen_mock.call_count, 3)
+        self.assertEqual(sleep_mock.call_args_list[0].args, (2,))
+        self.assertEqual(sleep_mock.call_args_list[1].args, (4,))
 
 
 class NasdaqGuideSignalTableTest(unittest.TestCase):

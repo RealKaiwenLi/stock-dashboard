@@ -358,6 +358,7 @@ dailyRecommendations: {
 - 当前每日脚本只把 `Key Tickers` 写到 database property，很多关键指标在 block table 里；如果 block 结构变更，backend 解析要跟着改。
 - `scripts/nasdaq_guide_signal.py` 的 upsert date 使用当前 LA 日期，而信号本身使用 latest bar date；Calendar 需要同时展示二者，避免误读。
 - Notion API 写入/读取可能较慢，首页模块必须能独立 loading。
+- 每日推荐自动化的 Notion 请求使用 30 秒单次 timeout，并对 timeout、网络错误、HTTP 408/429/5xx 最多尝试 3 次，重试间隔为 2 秒、4 秒；非瞬态 4xx 立即失败。
 
 ## 8. 建议改进
 

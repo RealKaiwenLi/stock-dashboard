@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -13,6 +14,9 @@ import pandas as pd
 
 
 NOTION_VERSION = "2022-06-28"
+NOTION_TIMEOUT_SECONDS = 30
+NOTION_MAX_RETRIES = 3
+RETRYABLE_NOTION_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 LA_TZ = ZoneInfo("America/Los_Angeles")
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().with_name("nasdaq_guide_config.json")
 
@@ -323,7 +327,16 @@ def write_markdown(result: dict[str, object], output_path: Path) -> None:
     output_path.write_text(build_markdown_report(result), encoding="utf-8")
 
 
-def notion_request(method: str, url: str, token: str, payload: dict | None = None) -> dict:
+def notion_request(
+    method: str,
+    url: str,
+    token: str,
+    payload: dict | None = None,
+    max_retries: int = NOTION_MAX_RETRIES,
+    timeout: int = NOTION_TIMEOUT_SECONDS,
+) -> dict:
+    if max_retries < 1:
+        raise ValueError("max_retries must be at least 1")
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     request = Request(
         url,
@@ -335,12 +348,32 @@ def notion_request(method: str, url: str, token: str, payload: dict | None = Non
             "Notion-Version": NOTION_VERSION,
         },
     )
-    try:
-        with urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Notion API {exc.code}: {body}") from exc
+    for attempt in range(1, max_retries + 1):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            if exc.code not in RETRYABLE_NOTION_STATUS_CODES or attempt == max_retries:
+                raise RuntimeError(f"Notion API {exc.code}: {body}") from exc
+            delay = 2**attempt
+            print(
+                f"notion_retry attempt={attempt}/{max_retries} "
+                f"reason=http_{exc.code} delay_seconds={delay}"
+            )
+            time.sleep(delay)
+        except (TimeoutError, URLError) as exc:
+            if attempt == max_retries:
+                raise RuntimeError(
+                    f"Notion API request timed out after {max_retries} attempts: {method} {url}"
+                ) from exc
+            delay = 2**attempt
+            print(
+                f"notion_retry attempt={attempt}/{max_retries} "
+                f"reason={type(exc).__name__} delay_seconds={delay}"
+            )
+            time.sleep(delay)
+    raise RuntimeError(f"Notion API request failed: {method} {url}")
 
 
 def query_existing_notion_page(database_id: str, notion_token: str, report_date: str) -> str | None:
