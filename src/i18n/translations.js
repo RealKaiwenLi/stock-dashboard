@@ -63,6 +63,15 @@ const dashboardTranslations = {
       previousMonth: '上个月',
       nextMonth: '下个月',
       fullExitSignal: '完整退出信号',
+      conditions: {
+        title: '策略条件',
+        signalGoldenCross: 'MACD 当日金叉',
+        priceBelowExitEma: (label) => `收盘价低于 ${label}`,
+        histPositive: 'MACD Hist > 0',
+        fullExitSignal: '完整退出信号',
+        met: '已满足',
+        notMet: '未满足',
+      },
       dayLabel: (date, holding, action) => `${date} 推荐持有 ${holding}，动作 ${action}`,
     },
     weeklyBacktests: {
@@ -171,6 +180,15 @@ const dashboardTranslations = {
       previousMonth: 'Previous month',
       nextMonth: 'Next month',
       fullExitSignal: 'Full exit signal',
+      conditions: {
+        title: 'Strategy conditions',
+        signalGoldenCross: 'MACD golden cross',
+        priceBelowExitEma: (label) => `Close below ${label}`,
+        histPositive: 'MACD Hist > 0',
+        fullExitSignal: 'Full exit signal',
+        met: 'Met',
+        notMet: 'Not met',
+      },
       dayLabel: (date, holding, action) => `${date} recommends ${holding}, action ${action}`,
     },
     weeklyBacktests: {

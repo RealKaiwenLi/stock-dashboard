@@ -14,10 +14,15 @@ const data = {
       holdForNextOpen: 'QLD',
       latestBarDate: '2026-07-01',
       modelVersion: '1.0.0',
+      latestClose: 545.12,
       macd: 1.2,
+      signal: 0.9,
       hist: 0.3,
       exitEmaLabel: 'EMA15',
       exitEma: 540.22,
+      signalGoldenCross: false,
+      priceBelowExitEma: false,
+      histPositive: true,
       fullExitSignal: false,
       notionUrl: 'https://notion.so/day-one',
     },
@@ -28,10 +33,15 @@ const data = {
       holdForNextOpen: 'TQQQ',
       latestBarDate: '2026-07-02',
       modelVersion: '1.0.1',
+      latestClose: 560.12,
       macd: 2.1,
+      signal: 1.5,
       hist: 0.6,
       exitEmaLabel: 'EMA12',
       exitEma: 555.44,
+      signalGoldenCross: true,
+      priceBelowExitEma: false,
+      histPositive: true,
       fullExitSignal: false,
       notionUrl: 'https://notion.so/day-two',
     },
@@ -114,6 +124,37 @@ describe('DailyRecommendationCalendar', () => {
     expect(screen.getByLabelText('Recommendation detail')).toHaveTextContent('QLD')
     expect(screen.getByText('EMA15')).toBeInTheDocument()
     expect(screen.getByText('1.0.0')).toBeInTheDocument()
+  })
+
+  it('shows which structured strategy conditions passed and failed', () => {
+    renderCalendar()
+
+    const conditions = screen.getByRole('list', { name: 'Strategy conditions' })
+    expect(conditions).toHaveTextContent('MACD golden cross')
+    expect(conditions).toHaveTextContent('Close below EMA12')
+    expect(conditions).toHaveTextContent('MACD Hist > 0')
+    expect(conditions).toHaveTextContent('Full exit signal')
+    expect(conditions).toHaveTextContent('✅Met')
+    expect(conditions).toHaveTextContent('❌Not met')
+    expect(conditions).toHaveTextContent('560.12 < 555.44')
+    expect(conditions).toHaveTextContent('0.6 > 0')
+  })
+
+  it('does not treat missing legacy conditions as failed', () => {
+    renderCalendar({
+      data: {
+        items: [
+          {
+            date: '2026-07-02',
+            recommendedHolding: 'QQQ',
+            action: 'HOLD',
+          },
+        ],
+      },
+    })
+
+    expect(screen.queryByRole('list', { name: 'Strategy conditions' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Not met')).not.toBeInTheDocument()
   })
 
   it('renders loading, empty and error states', () => {

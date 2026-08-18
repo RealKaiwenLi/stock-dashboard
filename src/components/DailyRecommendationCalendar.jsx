@@ -35,6 +35,41 @@ function formatModelVersion(value) {
   return /^v/i.test(version) ? version : `v${version}`
 }
 
+function strategyConditions(item, copy) {
+  const conditions = [
+    {
+      key: 'signalGoldenCross',
+      label: copy.signalGoldenCross,
+      passed: item.signalGoldenCross,
+      detail: item.macd != null && item.signal != null
+        ? `MACD ${formatValue(item.macd)} · Signal ${formatValue(item.signal)}`
+        : null,
+    },
+    {
+      key: 'priceBelowExitEma',
+      label: copy.priceBelowExitEma(item.exitEmaLabel ?? 'EMA'),
+      passed: item.priceBelowExitEma,
+      detail: item.latestClose != null && item.exitEma != null
+        ? `${formatValue(item.latestClose)} < ${formatValue(item.exitEma)}`
+        : null,
+    },
+    {
+      key: 'histPositive',
+      label: copy.histPositive,
+      passed: item.histPositive,
+      detail: item.hist != null ? `${formatValue(item.hist)} > 0` : null,
+    },
+    {
+      key: 'fullExitSignal',
+      label: copy.fullExitSignal,
+      passed: item.fullExitSignal,
+      detail: null,
+    },
+  ]
+
+  return conditions.filter((condition) => typeof condition.passed === 'boolean')
+}
+
 export function DailyRecommendationCalendar({
   copy,
   data,
@@ -51,6 +86,7 @@ export function DailyRecommendationCalendar({
   const itemMap = byDate(items)
   const latest = latestItem(items)
   const selected = itemMap[selectedDate] ?? latest
+  const conditions = selected ? strategyConditions(selected, copy.conditions) : []
   const calendarDays = buildCalendarDays(monthDate)
 
   if (loading && !items.length) {
@@ -182,11 +218,32 @@ export function DailyRecommendationCalendar({
                   <dt>{selected.exitEmaLabel ?? 'EMA'}</dt>
                   <dd>{formatValue(selected.exitEma)}</dd>
                 </div>
-                <div>
-                  <dt>{copy.fullExitSignal}</dt>
-                  <dd>{formatValue(selected.fullExitSignal)}</dd>
-                </div>
               </dl>
+              {conditions.length ? (
+                <div className="recommendation-conditions">
+                  <h3>{copy.conditions.title}</h3>
+                  <ul aria-label={copy.conditions.title}>
+                    {conditions.map((condition) => {
+                      const status = condition.passed ? copy.conditions.met : copy.conditions.notMet
+                      return (
+                        <li key={condition.key}>
+                          <div className="condition-copy">
+                            <strong>{condition.label}</strong>
+                            {condition.detail ? <small>{condition.detail}</small> : null}
+                          </div>
+                          <span
+                            className={`condition-status ${condition.passed ? 'condition-met' : 'condition-not-met'}`}
+                            aria-label={`${condition.label}: ${status}`}
+                          >
+                            <span aria-hidden="true">{condition.passed ? '✅' : '❌'}</span>
+                            {status}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ) : null}
               {selected.explanation ? <p>{selected.explanation}</p> : null}
               {selected.notionUrl ? (
                 <a href={selected.notionUrl} target="_blank" rel="noreferrer">

@@ -262,6 +262,8 @@ UI 结构：
   - 下月按钮
 - 7 列 calendar grid。
 - 日期详情 pane。
+- 日期详情把 `signalGoldenCross`、`priceBelowExitEma`、`histPositive` 和 `fullExitSignal` 渲染成条件状态列表；只渲染布尔值明确的项目，避免把 legacy `null` 误判为失败。
+- 条件状态同时使用 emoji、翻译文字和可用的数值比较，不能只依赖颜色表达结果。
 
 交互：
 
@@ -334,6 +336,7 @@ dailyRecommendations: {
   - 渲染最新推荐。
   - 渲染月份日历和 ticker。
   - 点击日期显示详情。
+  - 条件列表区分满足与未满足，并忽略 legacy 缺失条件。
   - `SWITCH_TO_...` 日期有切换标记。
   - loading/error/empty 状态。
 - App test：

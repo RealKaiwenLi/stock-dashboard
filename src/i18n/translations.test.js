@@ -33,6 +33,19 @@ describe('translations', () => {
     expect(en.postExitSummary.retain(10, 5, 'signal remains valid')).toContain('retain the latest entry signal for 5 trading days')
   })
 
+  it('provides aligned daily recommendation condition labels', () => {
+    const zh = getDashboardTranslations('zh').dailyRecommendations
+    const en = getDashboardTranslations('en').dailyRecommendations
+
+    expect(zh.conditions.title).toBe('策略条件')
+    expect(en.conditions.title).toBe('Strategy conditions')
+    expect(zh.conditions.priceBelowExitEma('EMA15')).toBe('收盘价低于 EMA15')
+    expect(en.conditions.priceBelowExitEma('EMA15')).toBe('Close below EMA15')
+    expect(zh.conditions.met).toBe('已满足')
+    expect(en.conditions.notMet).toBe('Not met')
+    expect(Object.keys(zh.conditions)).toEqual(Object.keys(en.conditions))
+  })
+
   it('localizes status labels and falls back to the given label', () => {
     expect(getLocalizedStatusLabel('偏强', 'en')).toBe('Strong')
     expect(getLocalizedStatusLabel('正常', 'en')).toBe('Normal')
